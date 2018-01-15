@@ -14,7 +14,10 @@ using std::atomic_int;
 using std::atomic_bool;
 using std::atomic_flag;
 
-
+/*
+ * rundown回调函数在之前使用资源前就注册：
+ * 
+ */
 void test_basic_1()
 {
     bool success;
