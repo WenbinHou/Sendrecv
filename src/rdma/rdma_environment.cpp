@@ -1,6 +1,6 @@
-#include <infiniband/verbs.h>
-#include <rdma/rdma_cma.h>
+#include "rdma_header.h"
 #define CQ_SIZE 100
+
 rdma_environment::rdma_environment()
 {
     //创建ibv_context，此ibv_context 需要替换所有rdma_create_id创建的id中的verbs
@@ -20,22 +20,30 @@ rdma_environment::~rdma_environment()
 {
     rdma_destroy_event_channel(conn_ec);
     CCALL(ibv_destroy_cq(cq));
-    CCALL(ibv_destroy_comp_channel);
+    CCALL(ibv_destroy_comp_channel(comp_channel));
     CCALL(ibv_dealloc_pd(pd));
     CCALL(ibv_close_device(ctx));
     ibv_free_device_list(dev_list);
 }
 
-void rdma_environment::main_loop()
+void rdma_environment::connection_loop()
 {
    //*********** 
+   return;
 }
-rdma_environment::create_connection(const char* connect_ip, const uint16_t port)
+
+void rdma_environment::sendrecv_loop()
+{
+    //**********
+    return;
+}
+
+rdma_connection* rdma_environment::create_rdma_connection(const char* connect_ip, const uint16_t port)
 {
    return new rdma_connection(this, connect_ip, port); 
 }
 
-rdma_environment::create_listener(const char* bind_ip, const uint16_t port)
+rdma_listener* rdma_environment::create_rdma_listener(const char* bind_ip, const uint16_t port)
 {
     return new rdma_listener(this, bind_ip, port);
 }

@@ -19,7 +19,7 @@ static std::mutex listener_close;
 
 static void set_server_connection_callbacks(connection* server_conn)
 {
-    const unsigned long long TRADEMARK = 0xdeedbeef19960513;
+    const unsigned long long TRADEMARK = 0xdeadbeef19960513;
     server_conn->OnClose = [&](connection*) {
         SUCC("[ServerConnection] OnClose\n");
     };

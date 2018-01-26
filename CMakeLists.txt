@@ -12,12 +12,13 @@ include_directories(".")
 # Link with thread library
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
-link_libraries(Threads::Threads)
+link_libraries(Threads::Threads ibverbs rdmacm)
 
 # Include all header files under src/common/
 file(GLOB COMMON_FILES "src/common/*.cpp" "src/common/*.h" "src/common/*.hpp")
 file(GLOB TESTS_FILES "tests/*.cpp" "tests/*.h" "tests/*.hpp")
-file(GLOB SRC_FILES "src/*.cpp" "src/*.h" "src/*.hpp")
+file(GLOB SRC_FILES "src/*.cpp" "src/*.h" "src/*.hpp" "src/rdma/*.cpp" "src/rdma/*.h" "src/rdma/*.hpp")
+#file(GLOB SRC_FILES "src/*.cpp" "src/*.h" "src/*.hpp")
 
 set(SOURCE_FILES
     ${COMMON_FILES}

@@ -1,19 +1,18 @@
 #ifndef _RDMA_LISTENER_H
 #define _RDMA_LISTENER_H
-#include "rdma_header"
 class rdma_listener : public listener
 {
     friend class rdma_environment;
     friend class rdma_connection;
 public:
     bool start_accept() override;
-    //bool async_close() override;
+    bool async_close() override;
     
-    endpoint bind_endpoint() const{return _bind_endpoint};
+    endpoint bind_endpoint() const{return _bind_endpoint;};
 private:
     rdma_listener(rdma_environment *env, const char* bind_ip, const uint16_t port);
 private:
-    struct rdma_cm_id *listener;
+    struct rdma_cm_id *listener_rdma_id;
     endpoint _bind_endpoint;
     rdma_fd_data listen_type;
 

@@ -6,6 +6,7 @@ class listener;
 class socket_environment;
 class socket_connection;
 class socket_listener;
+class socket_listener;
 
 #include <common/common.h>
 

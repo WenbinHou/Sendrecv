@@ -1,5 +1,8 @@
-#ifndef _RDMA_ENV
-#define _RDMA_ENV
+#ifndef _RDMA_ENV_H
+#define _RDMA_ENV_H
+//#include <environment.h> 不需要此include
+#include <thread>
+
 class rdma_environment: public environment
 {
     friend class rdma_connection;
@@ -11,7 +14,7 @@ public:
     rdma_connection *create_rdma_connection(const char* connect_ip, const uint16_t port);
 private:
     void connection_loop();//用于rdma_event_channel
-    void sr_loop(); //用于ibv_comp_channel
+    void sendrecv_loop(); //用于ibv_comp_channel
 private:
     struct ibv_device  **dev_list = nullptr; int num_devices;
     struct ibv_context *ctx = nullptr; //reference for rdma device
