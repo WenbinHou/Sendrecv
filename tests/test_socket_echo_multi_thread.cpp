@@ -189,7 +189,7 @@ void test_echo_multi_thread()
             socket_connection* client = env.create_connection(LOCAL_HOST, LOCAL_PORT);
             set_client_connection_callbacks(client, tid);
 
-            // Connect to server every 4 ms (just give server a break)
+            // Connect to server every 4 ms (just give server a break) hexiaobai reject
             std::this_thread::sleep_for(std::chrono::milliseconds(tid * 4));
             const bool success = client->async_connect();
             TEST_ASSERT(success);

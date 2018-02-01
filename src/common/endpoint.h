@@ -31,6 +31,29 @@ public:
         }
     }
 
+    void set_endpoint(struct sockaddr* sa)
+    {
+        const sa_family_t family = sa->sa_family;
+        switch(family){
+            case AF_INET: {
+                sa_ipv4 = *((sockaddr_in*)sa);
+                return;
+            }
+            case AF_INET6: { 
+                sa_ipv6 = *((sockaddr_in6*)sa);
+                return;
+            }
+            case AF_UNIX: {
+                sa_unix = *((sockaddr_un*)sa);
+                return;
+            }
+            default: {
+                FATAL("Can't set_endpoint Unknown sa_family: %d\n", (int)family);
+                ASSERT(0);
+            }
+        }
+    }
+
     endpoint(const char* socket_file)
     {
         ASSERT(socket_file);

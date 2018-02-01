@@ -1,0 +1,13 @@
+需要完成的项目
+1.async_connect发生错误应该怎么处理，如无法连接，应该怎么优雅的退出
+2.将comm_comp_channel设置为非阻塞，并放置于_environment中的_efd_rdma_fd
+3.需要调节qp总的参数qp_attr, rdma_conn_param参数
+4.在创建完rdma_connection对象的资源后，进行内存注册需要将recv_wr放入qp中
+5.需要完成没有写rundown相关的操作，以及考虑trigger_rundown_release需要进行的操作
+6.可能rdma_connection中不需要另外设置qp,cq,comp_channel
+7.目前还没有将comp_channel关联进epoll中，啦啦啦
+8.关于connectin 和listenr的async_close相关的操作需要重新写，涉及到rundown头疼
+9.学习彬彬是怎么优雅的结束env线程的，做到env线程可以优雅的结束
+
+困惑：
+1.process_epoll_listen_fd 这部分获取rundown的目的，以及释放的方法？

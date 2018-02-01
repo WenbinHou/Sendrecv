@@ -11,6 +11,7 @@ include_directories(".")
 
 # Link with thread library
 set(THREADS_PREFER_PTHREAD_FLAG ON)
+SET(CMAKE_BUILD_TYPE Debug)
 find_package(Threads REQUIRED)
 link_libraries(Threads::Threads ibverbs rdmacm)
 

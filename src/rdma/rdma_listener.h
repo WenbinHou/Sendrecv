@@ -11,6 +11,8 @@ public:
     endpoint bind_endpoint() const{return _bind_endpoint;};
 private:
     rdma_listener(rdma_environment *env, const char* bind_ip, const uint16_t port);
+    void process_accept_success(rdma_connection* new_rdma_conn);
+    void process_accept_fail();
 private:
     struct rdma_cm_id *listener_rdma_id;
     endpoint _bind_endpoint;

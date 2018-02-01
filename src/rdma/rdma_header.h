@@ -3,15 +3,12 @@
 #include <infiniband/verbs.h>
 #include <rdma/rdma_cma.h>
 
+#define TIMEOUT_IN_MS 500
+#define CQE_MIN_NUM 10
 class rdma_connection;
 class rdma_listener;
 class rdma_environment;
-/*
-typedef struct rdma_conn_fd{
-    struct rdma_cm_id *conn_id;
-    struct ibv_qp     *conn_qp;
-}rdma_conn_fd;
-*/
+
 //因为要通过channel获取到对应event中的rdma_cm_id的类型，所以需要rdma_fd_data这个结构体
 typedef struct rdma_fd_data{
     enum rdma_type{
