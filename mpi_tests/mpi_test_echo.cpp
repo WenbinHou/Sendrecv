@@ -50,8 +50,8 @@ void test()
                 ASSERT(accepted_conn == c);
                 ++finish_count;
 
+                SUCC("[Server] Done! %d/%d\n", finish_count, COMM_SIZE - 1);
                 if (finish_count == COMM_SIZE - 1) {
-                    SUCC("[Server] Done!\n");
                     lis->async_close();
                 }
             };
@@ -66,7 +66,10 @@ void test()
 
         lis->start_accept();
     }
-    else {
+
+    MPI_Barrier(MPI_COMM_WORLD);
+
+    if (MY_RANK != 0) {
         memset(data, (char)MY_RANK, DATSIZE);
 
         conn = env.create_connection(PHONEBOOK_IP[0], LISTEN_PORT);
@@ -77,9 +80,15 @@ void test()
 
             c->async_send(data, DATSIZE);
         };
+        conn->OnConnectError = [](connection* c, const int error) {
+            ASSERT(conn == c);
+            ERROR("[Client:%d] OnConnectError: %d (%s)\n", MY_RANK, error, strerror(error));
+            c->async_close();
+        };
         conn->OnSendError = [](connection* c, void* buffer, const size_t length, const size_t sent_length, const int error) {
             ASSERT(conn == c);
-            ERROR("[Client] OnSendError: %d (%s)\n", error, strerror(error));
+            ERROR("[Client:%d] OnSendError: %d (%s)\n", MY_RANK, error, strerror(error));
+            ASSERT(0);
             c->async_close();
         };
         conn->OnReceive = [](connection* c, void* buffer, const size_t length) {
@@ -91,14 +100,14 @@ void test()
 
             recv_length += length;
             if (recv_length == DATSIZE) {
-                SUCC("[Client] Done!\n");
+                SUCC("[Client:%d] Done!\n", MY_RANK);
                 c->async_close();
             }
         };
         conn->OnClose = [](connection* c) {
-            SUCC("[Client] OnClose\n");
+            SUCC("[Client:%d] OnClose\n", MY_RANK);
             ASSERT(conn == c);
-            ASSERT(recv_length == DATSIZE);
+            ASSERT(recv_length == 0 || recv_length == DATSIZE);
 
             lck.release();
         };

@@ -227,7 +227,7 @@ void socket_connection::do_send()
         if (sentCnt < 0) {
             const int error = errno;
             if (error == EAGAIN || error == EWOULDBLOCK) {
-                TRACE("socket_connection(fd=%d) sending buffer full. break.\n", _conn_fd);
+                //TRACE("socket_connection(fd=%d) sending buffer full. break.\n", _conn_fd);
                 break;
             }
 
@@ -241,8 +241,8 @@ void socket_connection::do_send()
         }
         else if (sentCnt > 0) {
             frag->forward((size_t)sentCnt);
-            INFO("socket_connection(fd=%d) sent %lld (total %lld / required %lld)\n", 
-                _conn_fd, (long long)sentCnt, (long long)frag->original_length() - frag->curr_length(), (long long)frag->original_length());
+            //TRACE("socket_connection(fd=%d) sent %lld (total %lld / required %lld)\n", 
+            //    _conn_fd, (long long)sentCnt, (long long)frag->original_length() - frag->curr_length(), (long long)frag->original_length());
 
             if (frag->curr_length() == 0) {
                 if (OnSend) {
@@ -288,7 +288,7 @@ void socket_connection::do_receive()
             // now: recvCnt < 0
             const int error = errno;
             if (error == EAGAIN || error == EWOULDBLOCK) {
-                TRACE("socket_connection(fd=%d) all pending data received. break.\n", _conn_fd);
+                //TRACE("socket_connection(fd=%d) all pending data received. break.\n", _conn_fd);
                 break;
             }
             else {

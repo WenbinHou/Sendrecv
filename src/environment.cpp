@@ -60,7 +60,7 @@ void socket_environment::main_loop()
             const fd_data* curr_fddata = (fd_data*)events_buffer[i].data.ptr;
             switch (curr_fddata->type) {
                 case fd_data::FDTYPE_SOCKET_NOTIFICATION_EVENT: {
-                    TRACE("trigger environment(eventfd=%d) events=%s\n", curr_fddata->fd, epoll_events_to_string(curr_events).c_str());
+                    //TRACE("trigger environment(eventfd=%d) events=%s\n", curr_fddata->fd, epoll_events_to_string(curr_events).c_str());
 
                     ASSERT(this == curr_fddata->owner);
                     ASSERT(this->_notification_event_fd == curr_fddata->fd);
@@ -68,7 +68,7 @@ void socket_environment::main_loop()
                     break;
                 }
                 case fd_data::FDTYPE_SOCKET_CONNECTION: {
-                    TRACE("trigger connection(fd=%d) events=%s\n", curr_fddata->fd, epoll_events_to_string(curr_events).c_str());
+                    //TRACE("trigger connection(fd=%d) events=%s\n", curr_fddata->fd, epoll_events_to_string(curr_events).c_str());
 
                     socket_connection* conn = (socket_connection*)curr_fddata->owner;
                     ASSERT(conn->_close_finished || conn->_conn_fd == curr_fddata->fd);
@@ -76,7 +76,7 @@ void socket_environment::main_loop()
                     break;
                 }
                 case fd_data::FDTYPE_SOCKET_LISTENER: {
-                    TRACE("trigger listener(fd=%d) events=%s\n", curr_fddata->fd, epoll_events_to_string(curr_events).c_str());
+                    //TRACE("trigger listener(fd=%d) events=%s\n", curr_fddata->fd, epoll_events_to_string(curr_events).c_str());
 
                     socket_listener* lis = (socket_listener*)curr_fddata->owner;
                     ASSERT(lis->_close_finished || lis->_listen_fd == curr_fddata->fd);
@@ -148,7 +148,7 @@ void socket_environment::push_and_trigger_notification(const event_data& notific
         CCALL(write(_notification_event_fd, &value, sizeof(value)));
     }
     else {
-        DEBUG("skip write(_notification_event_fd): queued notification count = %lld\n", (long long)new_size);
+        //DEBUG("skip write(_notification_event_fd): queued notification count = %lld\n", (long long)new_size);
     }
 }
 
