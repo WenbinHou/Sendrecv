@@ -54,6 +54,8 @@ int main(int argc, char** argv)
     MPI_Barrier(MPI_COMM_WORLD);
 
     // Do the test now!
+    extern void test();
+    test();
 
     CCALL(MPI_Finalize());
     return 0;
