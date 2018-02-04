@@ -16,7 +16,7 @@ lock lck(true);
 void test()
 {
     if (MY_RANK == 0) {
-        lis = env.create_listener(PHONEBOOK_IP[MY_RANK], LISTEN_PORT);
+        lis = env.create_listener(PHONEBOOK_IB[MY_RANK], LISTEN_PORT);
         lis->OnAccept = [](listener*, connection* accepted_conn) {
             accepted_conn->OnReceive = [accepted_conn](connection* c, void* buffer, const size_t length) {
                 ASSERT(accepted_conn == c);
@@ -72,7 +72,7 @@ void test()
     if (MY_RANK != 0) {
         memset(data, (char)MY_RANK, DATSIZE);
 
-        conn = env.create_connection(PHONEBOOK_IP[0], LISTEN_PORT);
+        conn = env.create_connection(PHONEBOOK_IB[0], LISTEN_PORT);
 
         conn->OnConnect = [](connection* c) {
             ASSERT(conn == c);
