@@ -65,9 +65,11 @@ public:
 
     size_t size()
     {
-        return _lock.acquire_run_release([&] {
-            return _queue.size();
+        size_t now_size;
+        _lock.acquire_run_release([&] {
+            now_size = _queue.size();
         });
+        return now_size;
     }
 
 private:

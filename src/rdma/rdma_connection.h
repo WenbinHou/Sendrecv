@@ -49,8 +49,11 @@ private:
     endpoint _local_endpoint;
 
     //there should be a sendingqueue, because the peer_of_send should wait for the peer of recv have already prepared the recv_buffer
-    tsqueue<fragment> _sending_queue;
-
+    tsqueue<rdma_sge_list*> _sending_queue;
+    std::atomic_int         peer_rest_wr;
+    //记录出去正在消耗的对端的wr外，剩下的wr(注：此wr仅仅表示用于接受控制信息的wr个数) 
+    pool<message>           ctl_msg_pool;
+    pool<addr_mr>           addr_mr_pool;//记录ctl_msg和addr_mr之间的关系
     //int _immediate_connect_error = 0;
     //
 };

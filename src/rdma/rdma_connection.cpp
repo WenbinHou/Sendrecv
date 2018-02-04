@@ -1,7 +1,7 @@
 #include "rdma_header.h"
 
 rdma_connection::rdma_connection(rdma_environment *env, const char* connect_ip, const uint16_t port)
-    :connection(env), _remote_endpoint(connect_ip, port)
+    :connection(env), _remote_endpoint(connect_ip, port), peer_rest_wr(MAX_RECV_WR)
 {
     //创建rdma_cm_id,并注意关联id对应的类型是conn还是用于listen
     conn_type = rdma_fd_data(this);
@@ -9,6 +9,8 @@ rdma_connection::rdma_connection(rdma_environment *env, const char* connect_ip, 
     //当前状态是未连接
     _status.store(CONNECTION_NOT_CONNECTED); 
 
+    int test_peer_rest_wr = peer_rest_wr.load();
+    ASSERT(test_peer_rest_wr == MAX_RECV_WR);
    /* _rundown.register_callback([&](){
         //****************之后在考虑怎么写这个**********
         //如果发送队列中还有数据如何处理~~~~~~~
@@ -26,12 +28,15 @@ rdma_connection::rdma_connection(rdma_environment *env, const char* connect_ip, 
 }
 
 rdma_connection::rdma_connection(rdma_environment* env, struct rdma_cm_id *new_conn_id, struct rdma_cm_id *listen_id)
-    :connection(env), conn_id(new_conn_id)
+    :connection(env), conn_id(new_conn_id), peer_rest_wr(MAX_RECV_WR)
 {
+    int test_peer_rest_wr = peer_rest_wr.load();
+    ASSERT(test_peer_rest_wr == MAX_RECV_WR);
     //解析本地和对方地址以及端口
     update_local_endpoint();
     update_remote_endpoint();
     build_conn_res();
+ 
     conn_lis = (rdma_listener*)(((rdma_fd_data*)(listen_id->context))->owner);
 }
 
@@ -55,10 +60,10 @@ void rdma_connection::build_qp_attr(struct ibv_qp_init_attr *qp_attr)
     qp_attr->qp_type = IBV_QPT_RC;
     qp_attr->qp_context = (void*)this;
     qp_attr->sq_sig_all = 1;
-    qp_attr->cap.max_send_wr = 5;
-    qp_attr->cap.max_recv_wr = 5;
-    qp_attr->cap.max_send_sge = 1;
-    qp_attr->cap.max_recv_sge = 1;
+    qp_attr->cap.max_send_wr = 2 * MAX_RECV_WR + 1;
+    qp_attr->cap.max_recv_wr = 2 * MAX_RECV_WR + 1;
+    qp_attr->cap.max_send_sge = MAX_SGE_NUM;
+    qp_attr->cap.max_recv_sge = MAX_SGE_NUM;
 }
 
 //创建connection的相关资源包括pd,comp_channel, cq, qp
@@ -68,6 +73,7 @@ void rdma_connection::build_conn_res()
     conn_pd = ibv_alloc_pd(conn_ctx); ASSERT(conn_pd);
     conn_comp_channel = ibv_create_comp_channel(conn_ctx); ASSERT(conn_comp_channel);
     conn_cq = ibv_create_cq(conn_ctx, CQE_MIN_NUM, this, conn_comp_channel, 0);
+    ASSERT(conn_cq);
     CCALL(ibv_req_notify_cq(conn_cq, 0));
     
     /*将comm_comp_channel设置为非阻塞，并放置于_environment中的_efd_rdma_fd*/
@@ -77,7 +83,43 @@ void rdma_connection::build_conn_res()
     ASSERT(conn_id->qp); conn_qp = conn_id->qp;
     TRACE("Build rdma connection resource finished.\n");
    
+    //注册MAX_RECV_WR用于接受控制信息的资源
     /*在创建完资源之后，需要进行post_receive操作，将用于接受的消息注册金qp中*/    
+    for(int i = 0;i < MAX_RECV_WR;i++){
+        struct ibv_recv_wr wr, *bad_wr = NULL;
+        struct ibv_sge sge;
+
+        addr_mr* addr_mr_pair = addr_mr_pool.pop();
+        //暂时每次pop的时候ibv_reg_mr，push的时候ibv_demsg_mr
+        message* ctl_msg = ctl_msg_pool.pop();
+        struct ibv_mr *ctl_msg_mr = ibv_reg_mr(conn_pd, ctl_msg, sizeof(message),
+                IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE);
+        ASSERT(ctl_msg_mr);
+        addr_mr_pair->msg_addr = ctl_msg;
+        addr_mr_pair->msg_mr   = ctl_msg_mr;
+        
+        sge.addr = (uintptr_t)ctl_msg;
+        sge.length  = sizeof(message);
+        sge.lkey    = ctl_msg_mr->lkey;
+
+        wr.wr_id   = (uintptr_t)addr_mr_pair;
+        wr.next    = nullptr;
+        wr.sg_list = &sge;
+        wr.num_sge = 1;
+
+        CCALL(ibv_post_recv(conn_qp, &wr, &bad_wr)); 
+    }
+    DEBUG("A connection  post %d recv_wr into qp.\n", MAX_RECV_WR);
+
+    //将conn_comp_channel加入到_efd_rdma_fd
+    MAKE_NONBLOCK(conn_comp_channel->fd);
+    CCALL(ibv_req_notify_cq(conn_cq, 0));
+    epoll_event event;
+    event.events   = EPOLLIN;
+    event.data.ptr = (void)this;
+    CCALL(epoll_ctl(env->_efd_rdma_fd, EPOLL_CTL_ADD, conn_comp_channel->fd, &event));
+    DEBUG("A connection add conn_comp_channel->fd into _efd_rdma_fd.\n");
+    
 }
 
 void rdma_connection::update_local_endpoint()
@@ -149,7 +191,43 @@ bool rdma_connection::async_close()
 
 bool rdma_connection::async_send(const void* buffer, const size_t length)
 {
-    //
+    ASSERT(buffer != nullptr); ASSERT(length > 0);
+    //获取rundown
+    size_t queue_size = _sending_queue.size();
+    if(queue_size <= 0) {
+        ((rdma_environment*)_environment)->
+            push_and_trigger_notification(rdma_event_data::rdma_async_send(this));
+    }
+    //!!!!!!!!!!!在检查一遍
+    size_t cur_len = length;
+    const char* cur_send = (char*)buffer;
+    int push_times= 0;
+    while(cur_len > 0){
+        push_times++;
+        size_t reg_size;
+        if(cur_len > MAX_SEND_LEN) reg_size = MAX_SEND_LEN;
+        else reg_size = cur_len;
+        //此pending_list需要放置到wr_id上，用于在完成操作后，ibv_dereg_mr
+        rdma_sge_list *pending_list = new rdma_sge_list();
+        //注册内存
+        ASSERT(conn_pd);
+        struct ibv_mr *mr = ibv_reg_mr(conn_pd, (void*)const_cast<char*>(cur_send), reg_size, IBV_ACCESS_LOCAL_WRITE);
+        pending_list->num_sge++;
+        pending_list->total_length += MAX_SEND_LEN;
+        //struct ibv_sge = {}
+        pending_list->sge_list.push_back((struct ibv_sge){(uintptr_t)cur_send, (uint32_t)reg_size, mr->lkey});
+        pending_list->mr_list.push_back(mr);
+        //pending_list将其放入_sending_queue中
+        _sending_queue.push(pending_list);
+        if(cur_len < MAX_SEND_LEN) break;
+        else{
+            cur_send += MAX_SEND_LEN;
+            cur_len -= MAX_SEND_LEN;
+        }
+    }
+    size_t new_size = _sending_queue.size();
+    TRACE("push %d sending data into _sending_queue(now_size:%d)\n", push_times, new_size);
+   
     return true;
 }
 

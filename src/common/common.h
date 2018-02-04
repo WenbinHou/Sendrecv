@@ -8,4 +8,7 @@
 #include "assertion.h"
 
 #include "tsqueue.h"
+#include "pool.h"
+
 #include "endpoint.h"
+

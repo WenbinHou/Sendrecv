@@ -23,6 +23,7 @@ void rdma_listener::process_accept_success(rdma_connection* new_rdma_conn)
 {
     //需要添加关于rundown相关操作
     ASSERT(new_rdma_conn);
+    new_rdma_conn->_status.store(CONNECTION_CONNECTED);
     ASSERT(OnAccept);
     OnAccept(this, new_rdma_conn);
 }
@@ -40,7 +41,7 @@ bool rdma_listener::start_accept()
     if (!_start_accept_required.compare_exchange_strong(expect, true)) {
         return false;
     }
-    //注意此处有rundown 获取操作
+    //注意此处有rundown 获取操作process_accept_success
     /*bool need_release;
     if(!_rundown.try_acquire(&need_release)){
         if(need_release){

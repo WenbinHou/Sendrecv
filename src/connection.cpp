@@ -347,7 +347,13 @@ bool socket_connection::async_send(const void* buffer, const size_t length)
     if (!_rundown.try_acquire(&need_release)) {
         if (need_release) {
             trigger_rundown_release();
-        }
+        } 
+        return false;
+    }
+    
+    connection_status cur_status = _status.load();
+    if(cur_status != CONNECTION_CONNECTED){
+        trigger_rundown_release();
         return false;
     }
 

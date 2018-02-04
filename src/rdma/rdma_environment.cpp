@@ -1,4 +1,5 @@
 #include "rdma_header.h"
+#include <net.h>
 #include <sys/epoll.h>
 #define CQ_SIZE 100
 
@@ -6,6 +7,10 @@ rdma_environment::rdma_environment()
 {
     env_ec = rdma_create_event_channel();
     _efd_rdma_fd = CCALL(epoll_create1(EPOLL_CLOEXEC));
+    _notification_event_rdma_fd = CCALL(eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK));
+    _notification_event_rdma_fddata = rdma_fd_type(this, _notification_event_rdma_fd);
+
+    epoll_add(&_notification_event_rdma_fddata, EPOLLIN | EPOLLET);
     //开启两个线程来进行连接和收发处理
     _loop_thread_connection = new std::thread([this](){
         connection_loop();
@@ -13,10 +18,39 @@ rdma_environment::rdma_environment()
         CCALL(close(_efd_rdma_fd));
         _efd_rdma_fd = INVALID_FD;
     }); 
+    _loop_thread_cq = new std::thread([this](){
+        sendrecv_loop();
+        CCALL(close(_notification_event_rdma_fd));
+        _notification_event_rdma_fd = INVALID_FD;
+        CCALL(close(_efd_rdma_fd));
+        _efd_rdma_fd = INVALID_FD;
+    });
+
 }
 
 rdma_environment::~rdma_environment()
 {
+}
+
+void rdma_environment::epoll_add(rdma_fd_type* fddata, const uint32_t events) const
+{
+    ASSERT(fddata); ASSERT_RESULT(fddata->fd);
+    epoll_event event; event.events = events; event.data.ptr = fddata;
+    CCALL(epoll_ctl(_efd_rdma_fd, EPOLL_CTL_ADD, fddata->fd, &event));
+}
+
+void rdma_environment::push_and_trigger_notification(const rdma_event_data& notification)
+{
+    const size_t new_size = _notification_rdma_queue.push(notification);
+    TRACE("push a rdma_event_data into the _notification_rdma_queue(size:%d).\n", new_size);
+    ASSERT_RESULT(_notification_event_rdma_fd);
+    if(new_size == 1){
+        uint64_t value = 1;
+        CCALL(write(_notification_event_rdma_fd, &value, sizeof(value)));
+    }
+    else{
+        DEBUG("skip write(_notification_event_rdma_fd): queued notification count = %lld\n",(long long)new_size);    
+    }
 }
 
 void rdma_environment::dispose()
@@ -33,6 +67,7 @@ void rdma_environment::build_params(struct rdma_conn_param *params)
 
 void rdma_environment::connection_loop()
 {
+    DEBUG("ENVIRONMENT start connection_loop.\n");
     struct rdma_cm_event *event = nullptr;
     struct rdma_conn_param cm_params;
     build_params(&cm_params);
@@ -141,7 +176,23 @@ void rdma_environment::connection_loop()
 
 void rdma_environment::sendrecv_loop()
 {
-    //**********
+    DEBUG("ENVIRONMENT start sendrecv_loop.\n");
+    const int EVENT_BUFFER_COUNT = 256;
+    epoll_event* events_buffer = new epoll_event[EVENT_BUFFER_COUNT];
+    while(true){
+        const int readyCnt = epoll_wait(_efd_rdma_fd, events_buffer, 
+                EVENT_BUFFER_COUNT, /*infinity*/-1);
+        if(readyCnt<0){
+            const int error = errno;
+            if(error == EINTR) continue;
+            ERROR("[rdma_environment] epoll_wait failed with %d (%s)\n", 
+                error, strerror(error));
+            break;
+        }
+        for(int i = 0;i < readyCnt;++i){
+        }
+        
+    }
     return;
 }
 
