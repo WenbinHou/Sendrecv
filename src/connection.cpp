@@ -2,6 +2,9 @@
 #include "net.h"
 #include <sys/epoll.h>
 
+#define SOCKET_NO_EPOLLET
+
+
 connection::connection(environment* env) 
     : _environment(env)
 {
@@ -51,7 +54,11 @@ void socket_connection::init(const bool isAccepted)
         update_local_endpoint();
 
         // Add to epoll if this is an accepted connection
+#ifdef SOCKET_NO_EPOLLET
+        ((socket_environment*)_environment)->epoll_add(&_conn_fddata, EPOLLOUT | EPOLLERR | EPOLLRDHUP);
+#else
         ((socket_environment*)_environment)->epoll_add(&_conn_fddata, EPOLLOUT | EPOLLERR | EPOLLRDHUP | EPOLLET);
+#endif
     }
     else {
         _status.store(CONNECTION_NOT_CONNECTED);
@@ -253,6 +260,13 @@ void socket_connection::do_send()
                 // This was acquired in async_send(), now release.
                 _rundown.release();
             }
+
+#ifdef SOCKET_NO_EPOLLET
+            // When we are not using ET, sending less data than expected means buffer is full
+            if (frag->curr_length() > 0) {
+                break;
+            }
+#endif
         }
         else {
             // sendCnt == 0
@@ -274,6 +288,13 @@ void socket_connection::do_receive()
             if (OnReceive) {
                 OnReceive(this, buffer, (size_t)recvCnt);
             }
+
+#ifdef SOCKET_NO_EPOLLET
+            // When we are not using ET, receiving less data than expected means buffer is empty
+            if ((size_t)recvCnt < BUFFER_SIZE) {
+                break;
+            }
+#endif
         }
         else if (recvCnt == 0) {
             // NOTE: We don't call OnHup here.
@@ -441,7 +462,11 @@ bool socket_connection::async_connect()
     // Add _conn_fd to epoll (if not failed synchronously)
     // DO NOT include EPOLLIN (modify epoll to add EPOLLIN in start_receive())
     if (_immediate_connect_error == 0) {
+#ifdef SOCKET_NO_EPOLLET
+        ((socket_environment*)_environment)->epoll_add(&_conn_fddata, EPOLLOUT | EPOLLERR | EPOLLRDHUP);
+#else
         ((socket_environment*)_environment)->epoll_add(&_conn_fddata, EPOLLOUT | EPOLLERR | EPOLLRDHUP | EPOLLET);
+#endif
     }
 
     return true;
@@ -465,7 +490,11 @@ bool socket_connection::start_receive()
     // Modify _conn_fd in epoll to add EPOLLIN
     ASSERT_RESULT(_conn_fd);
     ASSERT(_conn_fddata.fd == _conn_fd);
+#ifdef SOCKET_NO_EPOLLET
+    ((socket_environment*)_environment)->epoll_modify(&_conn_fddata, EPOLLIN | EPOLLOUT | EPOLLERR | EPOLLRDHUP);
+#else
     ((socket_environment*)_environment)->epoll_modify(&_conn_fddata, EPOLLIN | EPOLLOUT | EPOLLERR | EPOLLRDHUP | EPOLLET);
+#endif
 
     trigger_rundown_release();
     return true;

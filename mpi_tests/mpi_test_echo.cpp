@@ -50,7 +50,7 @@ void test()
                 ASSERT(accepted_conn == c);
                 ++finish_count;
 
-                SUCC("[Server] Done! %d/%d\n", finish_count, COMM_SIZE - 1);
+                SUCC("[Server] Done! %d/%d\n", (int)finish_count, COMM_SIZE - 1);
                 if (finish_count == COMM_SIZE - 1) {
                     lis->async_close();
                 }
