@@ -4,6 +4,8 @@ project(Sendrecv CXX)
 
 # Enable C++ 11
 set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_COMPILER mpicxx)
+set(CMAKE_C_COMPILER mpicc)
 
 # Add src to include directory
 include_directories("src")
@@ -26,3 +28,7 @@ set(SOURCE_FILES
 )
 
 add_executable(Sendrecv ${SOURCE_FILES})
+
+
+set(MPI_TEST_SOURCE_FILES ${COMMON_FILES} ${SRC_FILES} mpi_tests/mpi_test.h)
+add_executable(mpi_test_echo mpi_tests/mpi_test_echo.cpp ${MPI_TEST_SOURCE_FILES})
