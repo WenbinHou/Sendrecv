@@ -11,7 +11,7 @@ size_t recv_length = 0;
 
 const size_t DATSIZE = 1024 * 1024 * 32;  // 32MB
 char data[DATSIZE];
-lock lck(true);
+pvlock lck(0);
 
 void test()
 {
@@ -61,7 +61,7 @@ void test()
 
         lis->OnClose = [](listener*) {
             SUCC("[Server] Listener OnClose\n");
-            lck.release();
+            lck.V();
         };
 
         lis->start_accept();
@@ -109,11 +109,12 @@ void test()
             ASSERT(conn == c);
             ASSERT(recv_length == 0 || recv_length == DATSIZE);
 
-            lck.release();
+            lck.V();
         };
 
         conn->async_connect();
     }
 
-    lck.acquire();
+    lck.P();
 }
+

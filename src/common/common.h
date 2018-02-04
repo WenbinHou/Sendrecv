@@ -6,6 +6,8 @@
 
 #include "log.h"
 #include "assertion.h"
+#include "pvlock.h"
 
 #include "tsqueue.h"
 #include "endpoint.h"
+
