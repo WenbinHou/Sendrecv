@@ -9,7 +9,7 @@ size_t finish_count = 0;
 socket_connection* conn;
 size_t recv_length = 0;
 
-const size_t DATSIZE = 1024 * 1024 * 32;  // 32MB
+const size_t DATSIZE = 1024 * 1024 * 128;  // 128MB
 char data[DATSIZE];
 pvlock lck(0);
 
