@@ -351,6 +351,12 @@ bool socket_connection::async_send(const void* buffer, const size_t length)
         return false;
     }
 
+    connection_status cur_status = _status.load();
+    if(cur_status != CONNECTION_CONNECTED){
+        trigger_rundown_release();
+        return false;
+    }
+
     const size_t new_size = _sending_queue.push(fragment(buffer, length));
 
     // Trigger notification only if this is the only fragment to send
@@ -456,7 +462,7 @@ bool socket_connection::start_receive()
         return false;
     }
 
-    // Modify _conn_fd in epoll£º add EPOLLIN
+    // Modify _conn_fd in epoll to add EPOLLIN
     ASSERT_RESULT(_conn_fd);
     ASSERT(_conn_fddata.fd == _conn_fd);
     ((socket_environment*)_environment)->epoll_modify(&_conn_fddata, EPOLLIN | EPOLLOUT | EPOLLERR | EPOLLRDHUP | EPOLLET);

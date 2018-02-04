@@ -9,10 +9,11 @@
 - *Test*: Test `async_send_many`
 
 # Fix by current commit
-- *Enhancement*: Allow sending multiple fragments in one `async_send` call (with their order preserved)
+- *Bug:* fix a bug in `async_send`: not checking _status before sending.
 
 # Fixed
 
+- *Enhancement*: Allow sending multiple fragments in one `async_send` call (with their order preserved)
 - *Test:* Test using UDS
 - *Bug:* Potentially invoke rundown protection callback synchronously. 
     <br>1. Maybe by calling `_rundown.try_acquire()`. 
