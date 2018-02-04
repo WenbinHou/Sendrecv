@@ -1,6 +1,6 @@
 #pragma once
 
-#include <mpi/mpi.h>
+#include <mpi.h>
 #include <common/common.h>
 #include <sendrecv.h>
 #include <unistd.h>
