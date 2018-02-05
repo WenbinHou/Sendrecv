@@ -8,7 +8,7 @@ rdma_environment::rdma_environment()
     env_ec = rdma_create_event_channel();
     _efd_rdma_fd = CCALL(epoll_create1(EPOLL_CLOEXEC));
     _notification_event_rdma_fd = CCALL(eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK));
-    _notification_event_rdma_fddata = rdma_fd_type(this, _notification_event_rdma_fd);
+    _notification_event_rdma_fddata = rdma_fd_data(this, _notification_event_rdma_fd);
 
     epoll_add(&_notification_event_rdma_fddata, EPOLLIN | EPOLLET);
     //开启两个线程来进行连接和收发处理
@@ -32,7 +32,7 @@ rdma_environment::~rdma_environment()
 {
 }
 
-void rdma_environment::epoll_add(rdma_fd_type* fddata, const uint32_t events) const
+void rdma_environment::epoll_add(rdma_fd_data* fddata, const uint32_t events) const
 {
     ASSERT(fddata); ASSERT_RESULT(fddata->fd);
     epoll_event event; event.events = events; event.data.ptr = fddata;
@@ -78,7 +78,7 @@ void rdma_environment::connection_loop()
 
         switch(event_copy.event){
             case RDMA_CM_EVENT_ADDR_RESOLVED:{
-                rdma_connection *conn = (rdma_connection*)(((rdma_fd_type*)(event_copy.id->context))->owner);
+                rdma_connection *conn = (rdma_connection*)(((rdma_fd_data*)(event_copy.id->context))->owner);
                 conn->build_conn_res();
                 CCALL(rdma_resolve_route(event_copy.id, TIMEOUT_IN_MS));
                 break;                               
@@ -90,7 +90,7 @@ void rdma_environment::connection_loop()
             }
             case RDMA_CM_EVENT_CONNECT_REQUEST:{
                 rdma_connection *new_conn = create_rdma_connection_passive(event_copy.id, event_copy.listen_id);
-                //if(((rdma_fd_type*)(event_copy.listen_id->context))->owner) printf("------------------\n");
+                //if(((rdma_fd_data*)(event_copy.listen_id->context))->owner) printf("------------------\n");
                 //event_copy.id->context = new_conn; 
                 if(map_id_conn.find((intptr_t)(event_copy.id)) == map_id_conn.end()){
                     map_id_conn[(intptr_t)(event_copy.id)] = new_conn;
@@ -107,7 +107,7 @@ void rdma_environment::connection_loop()
             case RDMA_CM_EVENT_ESTABLISHED:{
                 DEBUG("handle rdma_cm_event_established event.\n");
                 if(map_id_conn.find((intptr_t)(event_copy.id)) == map_id_conn.end()){
-                    rdma_connection *conn = (rdma_connection*)(((rdma_fd_type*)(event_copy.id->context))->owner);
+                    rdma_connection *conn = (rdma_connection*)(((rdma_fd_data*)(event_copy.id->context))->owner);
                     conn->process_established();
                     NOTICE("%s to %s active connection established.\n",
                             conn->local_endpoint().to_string().c_str(), 
@@ -128,7 +128,7 @@ void rdma_environment::connection_loop()
                 DEBUG("handle rdma_cm_event_disconnected event.\n");
                 rdma_connection *conn = nullptr;
                 if(map_id_conn.find((intptr_t)(event_copy.id)) == map_id_conn.end()){
-                    conn = (rdma_connection*)(((rdma_fd_type*)(event_copy.id->context))->owner);
+                    conn = (rdma_connection*)(((rdma_fd_data*)(event_copy.id->context))->owner);
                 }
                 else{
                     conn = map_id_conn[(intptr_t)(event_copy.id)];
@@ -144,18 +144,18 @@ void rdma_environment::connection_loop()
             case RDMA_CM_EVENT_UNREACHABLE:
             case RDMA_CM_EVENT_REJECTED:{
                 if(event_copy.id && event_copy.id->context){
-                    rdma_connection *conn = (rdma_connection*)(((rdma_fd_type*)(event_copy.id->context))->owner);
+                    rdma_connection *conn = (rdma_connection*)(((rdma_fd_data*)(event_copy.id->context))->owner);
                     conn->process_established_error();
                 } 
                 break;
             }
             case RDMA_CM_EVENT_CONNECT_ERROR:{
                 if(event_copy.listen_id && event_copy.listen_id->context){
-                    rdma_listener* lis = (rdma_listener*)(((rdma_fd_type*)(event_copy.listen_id->context))->owner);
+                    rdma_listener* lis = (rdma_listener*)(((rdma_fd_data*)(event_copy.listen_id->context))->owner);
                     lis->process_accept_fail();
                 }
                 else if(event_copy.id && event_copy.id->context){
-                    rdma_connection *conn = (rdma_connection*)(((rdma_fd_type*)(event_copy.id->context))->owner);
+                    rdma_connection *conn = (rdma_connection*)(((rdma_fd_data*)(event_copy.id->context))->owner);
                     conn->process_established_error();
                 }
                 else{
@@ -179,6 +179,7 @@ void rdma_environment::sendrecv_loop()
     DEBUG("ENVIRONMENT start sendrecv_loop.\n");
     const int EVENT_BUFFER_COUNT = 256;
     epoll_event* events_buffer = new epoll_event[EVENT_BUFFER_COUNT];
+    struct ibv_wc ret_wc_array[CQE_MIN_NUM];
     while(true){
         const int readyCnt = epoll_wait(_efd_rdma_fd, events_buffer, 
                 EVENT_BUFFER_COUNT, /*infinity*/-1);
@@ -190,11 +191,63 @@ void rdma_environment::sendrecv_loop()
             break;
         }
         for(int i = 0;i < readyCnt;++i){
+            const uint32_t curr_events = events_buffer[i].events;
+            const rdma_fd_data* curr_rdmadata = (rdma_fd_data*)events_buffer[i].data.ptr;
+            switch(curr_rdmadata->type){
+                case rdma_fd_data::RDMATYPE_NOTIFICATION_EVENT:{
+                    TRACE("trigger rdma_eventfd = %d\n", curr_rdmadata->fd);
+                    ASSERT(this == curr_rdmadata->owner);
+                    ASSERT(curr_rdmadata->fd == _notification_event_rdma_fd);
+                    this->process_epoll_env_notificaton_event_rdmafd(curr_events);
+                    break;                                            
+                }
+                case rdma_fd_data::RDMATYPE_ID_CONNECTION:{
+                    //表示当前已经有完成任务发生了，可以通过ibv_get_cq_event获取
+                    struct ibv_cq *ret_cq; void *ret_ctx; struct ibv_wc wc;
+                    rdma_connection *conn = (rdma_connection*)curr_rdmadata->owner;
+                    CCALL(ibv_get_cq_event(conn->conn_comp_channel, &ret_cq, &ret_ctx));
+                    conn->ack_num++;
+                    if(conn->ack_num == ACK_NUM_LIMIT){ 
+                        ibv_ack_cq_events(ret_cq, conn->ack_num);
+                        conn->ack_num = 0;
+                    }
+                    CCALL(ibv_req_notify_cq(ret_cq, 0));
+                    int num_cqe;
+                    while(num_cqe = ibv_poll_cq(ret_cq, CQE_MIN_NUM, ret_wc_array)){
+                        conn->process_poll_cq(ret_cq, ret_wc_array, num_cqe);
+                    }
+                    break;
+                }
+                default:{
+                    FATAL("BUG: Unknown rdma_fd_data: %d\n", (int)curr_rdmadata->type);
+                    ASSERT(0);break;
+                }
+            }
         }
+        //此处要加入一个判断是否需要停止loop的东西
         
     }
     return;
 }
+
+//目前要处理的内容只有发送操作
+void rdma_environment::process_epoll_env_notificaton_event_rdmafd(const uint32_t events)
+{
+    uint64_t dummy; ASSERT(events & EPOLLIN);
+    CCALL(read(_notification_event_rdma_fd, &dummy, sizeof(dummy)));
+    //处理_notification_rdma_queue中的事物
+    rdma_event_data evdata;
+    while(_notification_rdma_queue.try_pop(&evdata)){
+        switch(evdata.type){
+            case rdma_event_data::RDMA_EVENTTYPE_ASYNC_SEND:{
+                rdma_connection* conn = (rdma_connection*)evdata.owner;
+                conn->process_rdma_async_send();
+                
+            }
+        }
+    }
+}
+
 
 rdma_connection* rdma_environment::create_rdma_connection(const char* connect_ip, const uint16_t port)
 {
