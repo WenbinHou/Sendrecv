@@ -7,7 +7,8 @@
 6.可能rdma_connection中不需要另外设置qp,cq,comp_channel
 7.目前还没有将comp_channel关联进epoll中，啦啦啦
 8.关于connectin 和listenr的async_close相关的操作需要重新写，涉及到rundown头疼
-9.学习彬彬是怎么优雅的结束env线程的，做到env线程可以优雅的结束
+9.学习彬彬是怎么优雅的结束env线程的，做到env线程可以优雅的结束,就是添加一个和线程开始停止相关的原子变量
+10.在ibv_ack_cq_event中，是多次联合ack,所以要注意之后destroy某个资源的时候把剩余的ack都要释放了,目前忘了那个资源了
 
 困惑：
 1.process_epoll_listen_fd 这部分获取rundown的目的，以及释放的方法？

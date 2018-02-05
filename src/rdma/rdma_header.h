@@ -1,13 +1,15 @@
 #pragma once
 #include <sendrecv.h>
+#include <net.h>
 #include <infiniband/verbs.h>
 #include <rdma/rdma_cma.h>
 #include <vector>
 #define TIMEOUT_IN_MS 500
-#define CQE_MIN_NUM 10
 #define MAX_SEND_LEN 2147483648
 #define MAX_RECV_WR 20
+#define CQE_MIN_NUM (MAX_RECV_WR*4+1) 
 #define MAX_SGE_NUM 10
+#define ACK_NUM_LIMIT 1 //暂时设置为1
 class rdma_connection;
 class rdma_listener;
 class rdma_environment;
@@ -22,16 +24,21 @@ typedef struct rdma_fd_data{
     };
     rdma_type type;
     void* owner;
-    int fd;//仅服务于eventfd
+    int fd;
 public:
     rdma_fd_data():type(RDMATYPE_UNKNOWN),owner(nullptr) {}
-    rdma_fd_data(rdma_connection * conn)
-        : type(RDMATYPE_ID_CONNECTION), owner(conn), fd(INVALID_FD) {}
-    rdma_fd_data(rdma_listener * listener)
-        : type(RDMATYPE_ID_LISTENER), owner(listener), fd(INVALID_FD){ }
+    rdma_fd_data(rdma_connection *conn)
+        :type(RDMATYPE_ID_CONNECTION), owner(conn), fd(INVALID_FD) { }
+    rdma_fd_data(rdma_connection * conn, const int conn_fd)
+        : type(RDMATYPE_ID_CONNECTION), owner(conn), fd(conn_fd) {}
+    rdma_fd_data(rdma_listener * listener, const int lis_fd)
+        : type(RDMATYPE_ID_LISTENER), owner(listener), fd(lis_fd){ }
     rdma_fd_data(rdma_environment* rdma_env, const int eventfd)
         :type(RDMATYPE_NOTIFICATION_EVENT), fd(eventfd), owner(rdma_env){}
-}rdma_fd_type;
+    rdma_fd_data(rdma_listener * listener)
+        : type(RDMATYPE_ID_LISTENER), owner(listener), fd(INVALID_FD){ }
+
+}rdma_fd_data;
 
 typedef struct rdma_event_data
 {
@@ -68,10 +75,14 @@ typedef struct message{
         MSG_MAX,
     };
     msg_type type;
-    struct{
-        uint64_t addr;
-        uint32_t rkey;
-    }mr;
+    union{
+        struct{
+            uint64_t addr;
+            uint32_t rkey;
+        }mr;
+        size_t peeding_send_size;
+    }data;
+    uintptr_t send_ctx_addr;
 }message;
 
 //记录addr和mr之间的关系

@@ -60,6 +60,8 @@ void rdma_connection::build_qp_attr(struct ibv_qp_init_attr *qp_attr)
     qp_attr->qp_type = IBV_QPT_RC;
     qp_attr->qp_context = (void*)this;
     qp_attr->sq_sig_all = 1;
+    qp_attr->cap.max_inline_data = sizeof(message)+1;
+    DEBUG("The size of message is %d\n",sizeof(message));
     qp_attr->cap.max_send_wr = 2 * MAX_RECV_WR + 1;
     qp_attr->cap.max_recv_wr = 2 * MAX_RECV_WR + 1;
     qp_attr->cap.max_send_sge = MAX_SGE_NUM;
@@ -69,6 +71,7 @@ void rdma_connection::build_qp_attr(struct ibv_qp_init_attr *qp_attr)
 //创建connection的相关资源包括pd,comp_channel, cq, qp
 void rdma_connection::build_conn_res()
 {
+    ack_num = 0;
     ASSERT(conn_id->verbs);conn_ctx = conn_id->verbs;
     conn_pd = ibv_alloc_pd(conn_ctx); ASSERT(conn_pd);
     conn_comp_channel = ibv_create_comp_channel(conn_ctx); ASSERT(conn_comp_channel);
@@ -114,11 +117,21 @@ void rdma_connection::build_conn_res()
     //将conn_comp_channel加入到_efd_rdma_fd
     MAKE_NONBLOCK(conn_comp_channel->fd);
     CCALL(ibv_req_notify_cq(conn_cq, 0));
+    //conn_type是否已经初始化
+    if(conn_type.owner == nullptr){
+        conn_type = rdma_fd_data(this, conn_comp_channel->fd);
+        DEBUG("Passive connection create rdma_fd_data.\n");
+    }
+    else {
+        conn_type.fd = conn_comp_channel->fd;
+        DEBUG("Active connetion update rdma_fd_data.\n");
+    }
     epoll_event event;
     event.events   = EPOLLIN;
-    event.data.ptr = (void)this;
-    CCALL(epoll_ctl(env->_efd_rdma_fd, EPOLL_CTL_ADD, conn_comp_channel->fd, &event));
-    DEBUG("A connection add conn_comp_channel->fd into _efd_rdma_fd.\n");
+    event.data.ptr = &conn_type;
+    ASSERT(_environment);
+    CCALL(epoll_ctl(((rdma_environment*)_environment)->_efd_rdma_fd, EPOLL_CTL_ADD, conn_comp_channel->fd, &event));
+    DEBUG("A connection[passive/active] add conn_comp_channel->fd into _efd_rdma_fd.\n");
     
 }
 
@@ -229,6 +242,120 @@ bool rdma_connection::async_send(const void* buffer, const size_t length)
     TRACE("push %d sending data into _sending_queue(now_size:%d)\n", push_times, new_size);
    
     return true;
+}
+
+void rdma_connection::process_rdma_async_send()
+{
+    int cur_peer_rest_wr = peer_rest_wr.load();
+    DEBUG("cur_peer_rest_wr is %d.\n", cur_peer_rest_wr);
+    //tsqueue<rdma_sge_list*> _sending_queue;
+    while(peer_rest_wr.load()){
+        rdma_sge_list *sge_list;
+        bool issuc = _sending_queue.try_pop(&sge_list);
+        if(!issuc) break;
+        //发送请求
+        addr_mr* addr_mr_pair = addr_mr_pool.pop();
+        message *ctl_msg      = ctl_msg_pool.pop();
+        struct ibv_mr *ctl_msg_mr = ibv_reg_mr(conn_pd, ctl_msg, sizeof(message),
+                IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE);
+        ASSERT(ctl_msg_mr);
+        addr_mr_pair->msg_addr = ctl_msg;
+        addr_mr_pair->msg_mr   = ctl_msg_mr;
+        
+        struct ibv_send_wr wr, *bad_wr = nullptr; struct ibv_sge sge;
+        ctl_msg->type = message::MSG_REQ;
+        ctl_msg->data.peeding_send_size = sge_list->total_length;
+        ctl_msg->send_ctx_addr = (uintptr_t)sge_list;//记录要发送的数据的位置，想不到更好的方法了
+        
+        sge.addr = (uintptr_t)ctl_msg;
+        sge.length = sizeof(*ctl_msg);
+        sge.lkey = ctl_msg_mr->lkey;
+        
+        wr.wr_id   = (uintptr_t)addr_mr_pair;
+        wr.next    = nullptr;
+        wr.opcode  = IBV_WR_SEND;
+        wr.sg_list = &sge;
+        wr.send_flags = IBV_SEND_INLINE;
+        
+        CCALL(ibv_post_send(conn_qp, &wr, &bad_wr));
+        int cur_pwr = --peer_rest_wr;
+        DEBUG("Sending MSG_REQ to peer :request %lld size recv_buffer, send_ctx_addr is %lld (peer rest wr is >= %d).\n", 
+                (long long)ctl_msg->data.peeding_send_size, 
+                (long long)ctl_msg->send_ctx_addr, cur_pwr); 
+    }
+}
+
+void rdma_connection::process_poll_cq(struct ibv_cq *ret_cq, struct ibv_wc *ret_wc_array, int num_cqe)
+{
+    for(int i = 0;i < num_cqe;i++){
+        process_one_cqe(ret_wc_array+i);    
+    }
+}
+
+void rdma_connection::process_one_cqe(struct ibv_wc *wc)
+{
+    if(wc->status != IBV_WC_SUCCESS){
+        //判断是接受还是发送
+        enum ibv_wc_opcode op = wc->opcode;
+        switch (op){
+            case IBV_WC_RECV:{
+                message* recv_ctl_msg = (message*)(uintptr_t)wc->id;
+                ASSERT(recv_ctl_msg->type == message::MSG_REQ);
+                size_t recv_size = recv_ctl_msg->data.peeding_send_size;
+                //分配接受的地址，并注册------------------------
+                char* recv_buffer = (char*)malloc(recv_size);
+                struct ibv_mr *recv_buffer_mr = ibv_reg_mr(conn_pd, recv_buffer, recv_size,
+                        IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE);
+                //---------------------------------------------
+                addr_mr* addr_mr_pair = addr_mr_pool.pop();
+                message* send_ctl_msg      = ctl_msg_pool.pop();
+                struct ibv_mr *send_ctl_msg_mr = ibv_reg_mr(conn_pd, send_ctl_msg, 
+                        sizeof(message), IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE);
+                ASSERT(ctl_msg_mr);
+                addr_mr_pair->msg_addr     = send_ctl_msg;
+                addr_mr_pair->msg_mr       = send_ctl_msg_mr;
+
+                send_ctl_msg->type         = message::MSG_ACK;
+                send_ctl_msg->data.mr.addr = (uintptr_t)recv_buffer_mr->addr;
+                send_ctl_msg->data.mr.rkey = recv_buffer_mr->rkey;
+                send_ctl_msg->send_ctx_addr = recv_ctl_msg->send_ctx_addr;
+                //准备发送，将ctl_msg发送到对端
+                struct ibv_send_wr wr, *bad_wr = nullptr; struct ibv_sge sge;
+                sge.addr   = (uintptr_t)send_ctl_msg;
+                sge.length = sizeof(*send_ctl_msg);
+                sge.lkey   = send_ctl_msg_mr->lkey;
+
+                wr.wr_id = (uintptr_t)addr_mr_pair; wr.opcode = IBV_WR_SEND;
+                wr.next  = nullptr; wr.sg_list = &sge; wr.num_sge = 1;
+                wr.send_flags = IBV_SEND_INLINE;
+
+                CCALL(ibv_post_send(conn_qp, &wr, &bad_wr));
+                 
+                
+             
+                
+                DEBUG("");
+                break;
+            }
+            case IBV_WC_RECV_RDMA_WITH_IMM:{
+                break;
+            }
+            case IBV_WC_SEND:{
+                break;
+            }
+            case IBV_WR_RDMA_WRITE_WITH_IMM:{
+                break;
+            }
+            default:{
+                FATAL("cannot handle ibv_wc_opcode %d.\n", op);
+                ASSERT(0);break;
+            }
+        }
+        else{
+
+        }
+
+    }
 }
 
 bool rdma_connection::start_receive()

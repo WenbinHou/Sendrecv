@@ -24,8 +24,9 @@ private:
 
     void build_params(struct rdma_conn_param *params);
     void close_connection_loop();
-    void epoll_add(rdma_fd_type* fddata, const uint32_t events) const;
+    void epoll_add(rdma_fd_data* fddata, const uint32_t events) const;
     void push_and_trigger_notification(const rdma_event_data& notification);
+    void process_epoll_env_notificaton_event_rdmafd(const uint32_t events);
 private:
     int _efd_rdma_fd = INVALID_FD;//用于epoll处理每个rdma_connection中的comp_channel的fd，对应_loop_thread_cq
     struct rdma_event_channel   *env_ec;//仅用于在rdma建立连接时使用，对应_loop_thread_connection
@@ -36,7 +37,7 @@ private:
     std::unordered_map<intptr_t, rdma_connection*> map_id_conn;//用于记录id和passive_connection之间的关系
     //eventfd在此处的作用同样是通知当前已经有数据准备好，可以发送
     int _notification_event_rdma_fd = INVALID_FD;
-    rdma_fd_type _notification_event_rdma_fddata;
+    rdma_fd_data _notification_event_rdma_fddata;
     tsqueue<rdma_event_data> _notification_rdma_queue;//此队列中暂时只处理发送的操作，不进行连接等操作的处理
 
 

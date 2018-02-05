@@ -31,6 +31,9 @@ private:
     void update_remote_endpoint();
     void process_established_error();
     void close_rdma_conn();
+    void process_rdma_async_send();
+    void process_poll_cq(struct ibv_cq *ret_cq, struct ibv_wc *ret_wc_array, int num_cqe);
+    void process_one_cqe(struct ibv_wc *wc);
 private:
     volatile bool _close_finish = false;
     rundown_protection _rundown;
@@ -42,7 +45,7 @@ private:
     struct ibv_qp             *conn_qp = nullptr;
     struct ibv_cq             *conn_cq = nullptr;
     struct ibv_comp_channel   *conn_comp_channel = nullptr;
-
+    int ack_num = 0;
     rdma_listener             *conn_lis = nullptr;//nulltpr表示主动连接，非NULL表示此连接时passive connection
     rdma_fd_data  conn_type;
     endpoint _remote_endpoint;
