@@ -10,6 +10,7 @@
 #define CQE_MIN_NUM (MAX_RECV_WR*4+1) 
 #define MAX_SGE_NUM 10
 #define ACK_NUM_LIMIT 1 //暂时设置为1
+#define RECVMAP_MAX   5000
 class rdma_connection;
 class rdma_listener;
 class rdma_environment;
@@ -61,8 +62,13 @@ typedef struct rdma_sge_list
     size_t num_sge;
     size_t total_length;//所有待发送的数据的大小（不能超过2G）
     std::vector<struct ibv_mr*> mr_list;
+    bool   end;
+    void * send_start;
+    size_t send_length;
+    size_t has_sent_len;
 public:
-    rdma_sge_list(): num_sge(0), total_length(0) {}
+    rdma_sge_list(): num_sge(0), total_length(0), end(false),send_start(nullptr),
+                     send_length(0), has_sent_len(0) {}
 }rdma_sge_list;
 
 
@@ -82,7 +88,8 @@ typedef struct message{
         }mr;
         size_t peeding_send_size;
     }data;
-    uintptr_t send_ctx_addr;
+    uintptr_t send_ctx_addr;//from send side
+    uint32_t  recv_addr_index;
 }message;
 
 //记录addr和mr之间的关系
@@ -90,6 +97,13 @@ typedef struct addr_mr{
     message *msg_addr;
     ibv_mr  *msg_mr;
 }addr_mr;
+
+typedef struct recv_info{
+    uintptr_t   recv_addr;
+    size_t      recv_size;
+    ibv_mr*     recv_mr;
+}recv_info;
+
 
 #include "rdma_connection.h"
 #include "rdma_listener.h"

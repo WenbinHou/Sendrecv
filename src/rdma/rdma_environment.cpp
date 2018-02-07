@@ -42,7 +42,7 @@ void rdma_environment::epoll_add(rdma_fd_data* fddata, const uint32_t events) co
 void rdma_environment::push_and_trigger_notification(const rdma_event_data& notification)
 {
     const size_t new_size = _notification_rdma_queue.push(notification);
-    TRACE("push a rdma_event_data into the _notification_rdma_queue(size:%d).\n", new_size);
+    TRACE("push a rdma_event_data into the _notification_rdma_queue(size:%ld).\n", new_size);
     ASSERT_RESULT(_notification_event_rdma_fd);
     if(new_size == 1){
         uint64_t value = 1;

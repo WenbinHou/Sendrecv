@@ -128,3 +128,51 @@ public:
     }
 };
 
+template<typename T>
+class arraypool {
+    static_assert(sizeof(T) >= sizeof(uint32_t) , "pool<T> requires sizeof(T) >= sizeof(uint32_t)");
+private:
+    std::vector<T> array;
+    uint32_t head;
+public:
+    arraypool(const arraypool&) = delete;
+    arraypool(arraypool&&) = delete;
+    arraypool(){
+        head = 0xffffffff;
+    };
+
+    T* get(uint32_t index){
+        return &array[index];
+    }
+
+    arraypool(int size){
+        array.resize(size);
+        for(int i = 0;i < size-1;i++){
+            *((uint32_t*)(&array[i])) = i+1;
+        }
+        *((uint32_t*)(&array[size-1])) = 0xffffffff;
+        head  = 0;
+    }
+
+    uint32_t pop(){
+        if(head == 0xffffffff){
+            int array_size = array.size();
+            T one;
+            array.push_back(one);
+            return array_size;
+        }
+        int index = head;
+        head = *((uint32_t*)(&array[head]));
+        memset(&array[index], 0, sizeof(T));
+        return index;
+    }
+
+    void push(uint32_t index){
+        memset(&array[index], 0, sizeof(T));
+        *((uint32_t*)(&array[index])) = head;
+        head = index;
+    }
+};
+
+
+

@@ -462,7 +462,7 @@ bool socket_connection::start_receive()
         return false;
     }
 
-    // Modify _conn_fd in epoll£º add EPOLLIN
+    // Modify _conn_fd in epoll£d add EPOLLIN
     ASSERT_RESULT(_conn_fd);
     ASSERT(_conn_fddata.fd == _conn_fd);
     ((socket_environment*)_environment)->epoll_modify(&_conn_fddata, EPOLLIN | EPOLLOUT | EPOLLERR | EPOLLRDHUP | EPOLLET);

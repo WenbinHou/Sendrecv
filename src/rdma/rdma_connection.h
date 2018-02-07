@@ -32,8 +32,17 @@ private:
     void process_established_error();
     void close_rdma_conn();
     void process_rdma_async_send();
+    void try_to_send();
     void process_poll_cq(struct ibv_cq *ret_cq, struct ibv_wc *ret_wc_array, int num_cqe);
     void process_one_cqe(struct ibv_wc *wc);
+    void post_send_ackctl_msg(message::msg_type type, uint64_t addr,
+                              uint32_t rkey, uintptr_t send_ctx_addr, uint32_t recv_addr_index);
+    void post_reuse_recv_ctl_msg(addr_mr* reuse_addr_mr);
+    void post_new_recv_ctl_msg();
+    void post_send_rdma_write(rdma_sge_list* pending_send_sge_list, uint64_t peer_addr,
+                              uint32_t peer_rkey, uint32_t recv_addr_index);
+    void post_send_req_msg(rdma_sge_list* sge_list, bool isDecrease, addr_mr* reuse_addr_mr);
+    void dereg_recycle(addr_mr* addr_mr_pair);
 private:
     volatile bool _close_finish = false;
     rundown_protection _rundown;
@@ -45,7 +54,7 @@ private:
     struct ibv_qp             *conn_qp = nullptr;
     struct ibv_cq             *conn_cq = nullptr;
     struct ibv_comp_channel   *conn_comp_channel = nullptr;
-    int ack_num = 0;
+    int    ack_num = 0;
     rdma_listener             *conn_lis = nullptr;//nulltpr表示主动连接，非NULL表示此连接时passive connection
     rdma_fd_data  conn_type;
     endpoint _remote_endpoint;
@@ -54,9 +63,13 @@ private:
     //there should be a sendingqueue, because the peer_of_send should wait for the peer of recv have already prepared the recv_buffer
     tsqueue<rdma_sge_list*> _sending_queue;
     std::atomic_int         peer_rest_wr;
+    std::atomic<bool>        peer_start_recv;
     //记录出去正在消耗的对端的wr外，剩下的wr(注：此wr仅仅表示用于接受控制信息的wr个数) 
     pool<message>           ctl_msg_pool;
     pool<addr_mr>           addr_mr_pool;//记录ctl_msg和addr_mr之间的关系
+    pool<rdma_sge_list>     rdma_sge_pool;
+
+    arraypool<recv_info> recvinfo_pool;
     //int _immediate_connect_error = 0;
     //
 };
