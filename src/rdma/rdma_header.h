@@ -47,6 +47,7 @@ typedef struct rdma_event_data
     {
         RDMA_EVENTTPYE_UNKNOWN = 0,
         RDMA_EVENTTYPE_ASYNC_SEND,
+        RDMA_EVENTTYPE_START_RECV,
         RDMA_EVENTTYPE_MAX,
     };
     rdma_event_type type;
@@ -78,6 +79,7 @@ typedef struct message{
         MSG_INVALID = 0,
         MSG_REQ,
         MSG_ACK,
+        MSG_STR,
         MSG_MAX,
     };
     msg_type type;

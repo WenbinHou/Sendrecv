@@ -5,6 +5,7 @@ rdma_connection::rdma_connection(rdma_environment *env, const char* connect_ip, 
     :connection(env), _remote_endpoint(connect_ip, port), peer_rest_wr(MAX_RECV_WR), recvinfo_pool()
 {
     //创建rdma_cm_id,并注意关联id对应的类型是conn还是用于listen
+    peer_start_recv.store(false);//the peer recv is not ready for receive
     conn_type = rdma_fd_data(this);
     CCALL(rdma_create_id(env->env_ec, &conn_id, &conn_type, RDMA_PS_TCP));
     //当前状态是未连接
@@ -31,6 +32,7 @@ rdma_connection::rdma_connection(rdma_environment *env, const char* connect_ip, 
 rdma_connection::rdma_connection(rdma_environment* env, struct rdma_cm_id *new_conn_id, struct rdma_cm_id *listen_id)
     :connection(env), conn_id(new_conn_id), peer_rest_wr(MAX_RECV_WR),recvinfo_pool()
 {
+    peer_start_recv.store(false);//the peer recv is not ready for receive
     int test_peer_rest_wr = peer_rest_wr.load();
     ASSERT(test_peer_rest_wr == MAX_RECV_WR);
     //解析本地和对方地址以及端口
@@ -188,16 +190,21 @@ bool rdma_connection::async_send(const void* buffer, const size_t length)
     ASSERT(buffer != nullptr); ASSERT(length > 0);
     //获取rundown
     size_t queue_size = _sending_queue.size();
-    if(queue_size <= 0) {
-        ((rdma_environment*)_environment)->
-            push_and_trigger_notification(rdma_event_data::rdma_async_send(this));
+
+    if(peer_start_recv.load()){
+        if(queue_size <= 0) {
+            ((rdma_environment*)_environment)->
+                    push_and_trigger_notification(rdma_event_data::rdma_async_send(this));
+        }
     }
+    //if peer_start_recv is false then only push send_buffer into _sending_queu
+
     //!!!!!!!!!!!在检查一遍,each element int the queue contains 2 sge.
     size_t cur_len = length;
     const char* cur_send = (char*)buffer;
     void* send_start = (void*)const_cast<void*>(buffer);
     size_t send_length = length; size_t sent_len = 0;
-    int push_times= 0;
+    int push_times = 0;
 
     while(cur_len > 0){
         push_times++;
@@ -464,9 +471,13 @@ void rdma_connection::process_one_cqe(struct ibv_wc *wc) {
                         dereg_recycle((addr_mr*) wc->wr_id);
                     }
                 }
-                else if(wc->byte_len == 0){
-                    //the peer side ready to receive buffer, the put the
-
+                else if(recv_type == message::MSG_STR){
+                    DEBUG("connection recv start_receive request.\n");
+                    post_reuse_recv_ctl_msg((addr_mr*) wc->wr_id);
+                    //put the rdma_event_data into _notification_rdma_queue
+                    peer_start_recv.store(true);
+                    ((rdma_environment*)_environment)->
+                            push_and_trigger_notification(rdma_event_data::rdma_async_send(this));
 
                 }
                 else{
@@ -557,15 +568,32 @@ void rdma_connection::process_one_cqe(struct ibv_wc *wc) {
 
 bool rdma_connection::start_receive()
 {
-    //send a empty request
-    struct ibv_send_wr wr, *bad_wr = NULL; struct ibv_sge sge;
-    memset(&wr, 0, sizeof(wr));
-    wr.opcode = IBV_WR_SEND;
-    wr.sg_list = &sge;
-    wr.num_sge = 1; wr.send_flags = IBV_SEND_INLINE;
-    sge.addr = (uintptr_t)nullptr; sge.length = 0; sge.lkey = 0;
+    //focus to async_send
+    if (_status != CONNECTION_CONNECTED) {
+        //trigger rundown
+        return false;
+    }
+
+    addr_mr* addr_mr_pair = addr_mr_pool.pop();
+    message *ctl_msg      = ctl_msg_pool.pop();
+    struct ibv_mr *ctl_msg_mr = ibv_reg_mr(conn_pd, ctl_msg, sizeof(message),
+                                           IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE);
+    ASSERT(ctl_msg_mr);
+    addr_mr_pair->msg_addr = ctl_msg; addr_mr_pair->msg_mr   = ctl_msg_mr;
+
+    struct ibv_send_wr wr, *bad_wr = nullptr; struct ibv_sge sge;
+    ctl_msg->type = message::MSG_STR;
+
+    sge.addr = (uintptr_t)ctl_msg;
+    sge.length = sizeof(*ctl_msg);
+    sge.lkey = ctl_msg_mr->lkey;
+
+    wr.wr_id   = (uintptr_t)addr_mr_pair; wr.next    = nullptr;
+    wr.opcode  = IBV_WR_SEND; wr.sg_list = &sge;
+    wr.send_flags = IBV_SEND_INLINE;
+
     CCALL(ibv_post_send(conn_qp, &wr, &bad_wr));
-    DEBUG("Start to receive the buffer ~~~.\n");
+    DEBUG("Sending start_receive req to the connection peer.\n");
     return true;
 }
 

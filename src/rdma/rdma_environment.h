@@ -38,8 +38,7 @@ private:
     //eventfd在此处的作用同样是通知当前已经有数据准备好，可以发送
     int _notification_event_rdma_fd = INVALID_FD;
     rdma_fd_data _notification_event_rdma_fddata;
-    tsqueue<rdma_event_data> _notification_rdma_queue;//此队列中暂时只处理发送的操作，不进行连接等操作的处理
-    tsqueue<rdma_event_data> _start_recv_queue;
+    tsqueue<rdma_event_data> _notification_rdma_queue;//此队列中暂时只处理发送的操作，不进行连接等操作的处
 };
 
 
