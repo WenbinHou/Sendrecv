@@ -24,6 +24,7 @@ public:
     endpoint remote_endpoint() const { return _remote_endpoint; };
     endpoint local_endpoint() const { return _local_endpoint; };
 private:
+    void register_rundown();
     void build_conn_res();
     void build_qp_attr(struct ibv_qp_init_attr *qp_attr);
     void process_established();
@@ -44,7 +45,7 @@ private:
     void post_send_req_msg(rdma_sge_list* sge_list, bool isDecrease, addr_mr* reuse_addr_mr);
     void dereg_recycle(addr_mr* addr_mr_pair);
 private:
-    volatile bool _close_finish = false;
+    volatile bool _close_finished = false;
     rundown_protection _rundown;
     std::atomic<connection_status> _status;
     //一个rdma_connection由五个结构体构成，id, pd，qp, cq, comp_channel
@@ -62,7 +63,7 @@ private:
 
     //there should be a sendingqueue, because the peer_of_send should wait for the peer of recv have already prepared the recv_buffer
     tsqueue<rdma_sge_list*> _sending_queue;
-    std::atomic_int         peer_rest_wr;
+    std::atomic_int          peer_rest_wr;
     std::atomic<bool>        peer_start_recv;
     //记录出去正在消耗的对端的wr外，剩下的wr(注：此wr仅仅表示用于接受控制信息的wr个数) 
     pool<message>           ctl_msg_pool;

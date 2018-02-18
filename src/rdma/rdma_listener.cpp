@@ -9,29 +9,49 @@ listener(env), _bind_endpoint(bind_ip, port)
     CCALL(rdma_bind_addr(listener_rdma_id, _bind_endpoint.data()));
     //按照文彬的方式
     _start_accept_required.store(false);
-   /* _rundown.register_callback([&](){
-        if(OnClose){
+
+    // Register rundown protection callback
+    _rundown.register_callback([&]() {
+        // Invoke OnClose callback
+        if (OnClose) {
             OnClose(this);
         }
+
         ASSERT_RESULT(listener_rdma_id);
         CCALL(rdma_destroy_id(listener_rdma_id));
         listener_rdma_id = nullptr;
         _close_finished = true;
-    });*/
+    });
 }
 void rdma_listener::process_accept_success(rdma_connection* new_rdma_conn)
 {
-    //需要添加关于rundown相关操作
     ASSERT(new_rdma_conn);
+    bool need_release;
+    if (!_rundown.try_acquire(&need_release)) {
+        ASSERT(new_rdma_conn->conn_id);
+        WARN("rdma_connection(conn_id:%ld) _rundown.try_acquire() failed\n", (uintptr_t)new_rdma_conn->conn_id);
+        _rundown.release();
+        return;
+    }
     new_rdma_conn->_status.store(CONNECTION_CONNECTED);
     ASSERT(OnAccept);
     OnAccept(this, new_rdma_conn);
+    _rundown.release();
 }
 void rdma_listener::process_accept_fail()
 {
-    if(OnAcceptError){
-        OnAcceptError(this, errno);
+    bool need_release;
+    if (!_rundown.try_acquire(&need_release)) {
+        if (need_release) {
+            _rundown.release();
+        }
+        return;
     }
+    const int error = errno;
+    if(OnAcceptError){
+        OnAcceptError(this, error);
+    }
+    _rundown.release();
 }
 
 bool rdma_listener::start_accept()
@@ -41,21 +61,35 @@ bool rdma_listener::start_accept()
     if (!_start_accept_required.compare_exchange_strong(expect, true)) {
         return false;
     }
-    //注意此处有rundown 获取操作process_accept_success
-    /*bool need_release;
-    if(!_rundown.try_acquire(&need_release)){
-        if(need_release){
-            //处理一些操作
+
+    bool need_release;
+    if (!_rundown.try_acquire(&need_release)) {
+        if (need_release) {
+            _rundown.release();
         }
-    }*/
+        return false;
+    }
+
     CCALL(rdma_listen(listener_rdma_id, INT_MAX));
+    _rundown.release();
     return true;
 }
 
 bool rdma_listener::async_close()
 {
-    //此处随意写了一下，之后改
-    if(OnClose)
-        OnClose(this);
+    bool need_release;
+    if (!_rundown.try_acquire(&need_release)) {
+        if (need_release) {
+            _rundown.release();
+        }
+        return false;
+    }
+
+    if (!_rundown.shutdown()) {
+        _rundown.release();
+        return false;
+    }
+    //immediately _rundown.release?
+    _rundown.release();
     return true;
 }

@@ -5,6 +5,8 @@
 
 rdma_environment::rdma_environment()
 {
+    _dispose_required_connect.store(false);
+    _dispose_required_sendrecv.store(false);
     env_ec = rdma_create_event_channel();
     _efd_rdma_fd = CCALL(epoll_create1(EPOLL_CLOEXEC));
     _notification_event_rdma_fd = CCALL(eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK));
@@ -55,7 +57,15 @@ void rdma_environment::push_and_trigger_notification(const rdma_event_data& noti
 
 void rdma_environment::dispose()
 {
+    // for all_debug
+    _dispose_required_sendrecv.store(true);
+    _loop_thread_cq->join();
     _loop_thread_connection->join();
+
+    //for debug only connection related operation
+    /*_dispose_required_connect.store(true);
+    _loop_thread_connection->join();
+     */
 }
 
 void rdma_environment::build_params(struct rdma_conn_param *params)
@@ -135,8 +145,6 @@ void rdma_environment::connection_loop()
                     map_id_conn.erase((intptr_t)(event_copy.id));
                 }
                 conn->close_rdma_conn();
-                delete conn;
-                rdma_destroy_id(event_copy.id);
                 break; 
             }
             case RDMA_CM_EVENT_ADDR_ERROR:
@@ -169,6 +177,10 @@ void rdma_environment::connection_loop()
                 ASSERT(0);
                 break;
             }
+        }
+        if(_dispose_required_connect){
+            DEBUG("_dispose_require_connect has change to the true, ready close connection_loop.\n");
+            break;
         }
     }
    return;
@@ -225,8 +237,13 @@ void rdma_environment::sendrecv_loop()
             }
         }
         //此处要加入一个判断是否需要停止loop的东西
-        
+        if(_dispose_required_sendrecv){
+            _dispose_required_connect.store(true);
+            DEBUG("ready to close the sendrecv_loop, then close the connection_loop");
+            break;
+        }
     }
+    delete[] events_buffer;
     return;
 }
 
@@ -242,8 +259,9 @@ void rdma_environment::process_epoll_env_notificaton_event_rdmafd(const uint32_t
             case rdma_event_data::RDMA_EVENTTYPE_ASYNC_SEND:{
                 rdma_connection* conn = (rdma_connection*)evdata.owner;
                 conn->process_rdma_async_send();
-                
             }
+            //there should be other rdma_event_data
+                //  LISTENER_CLOSE LISTENER_RUNDOWN_RELEASE
         }
     }
 }

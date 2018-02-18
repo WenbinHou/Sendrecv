@@ -9,23 +9,11 @@ rdma_connection::rdma_connection(rdma_environment *env, const char* connect_ip, 
     conn_type = rdma_fd_data(this);
     CCALL(rdma_create_id(env->env_ec, &conn_id, &conn_type, RDMA_PS_TCP));
     //当前状态是未连接
-    _status.store(CONNECTION_NOT_CONNECTED); 
+    _status.store(CONNECTION_NOT_CONNECTED);
 
     int test_peer_rest_wr = peer_rest_wr.load();
     ASSERT(test_peer_rest_wr == MAX_RECV_WR);
-   /* _rundown.register_callback([&](){
-        //****************之后在考虑怎么写这个**********
-        //如果发送队列中还有数据如何处理~~~~~~~
-        //
-        //
-        if(OnClose) OnClose(this);
-        ASSERT_RESULT(conn_id);
-        if(conn_qp) rdma_destroy_qp(conn_id);//!!!!!!!!!!!!!!!!!!!!是否需要
-        conn_qp = nullptr;
-        CCALL(rdma_destroy_id(conn_id));
-        conn_id = nullptr;
-        _close_finish = true;
-    });*/
+    register_rundown();
 
 }
 
@@ -41,17 +29,67 @@ rdma_connection::rdma_connection(rdma_environment* env, struct rdma_cm_id *new_c
     build_conn_res();
  
     conn_lis = (rdma_listener*)(((rdma_fd_data*)(listen_id->context))->owner);
+    register_rundown();
+}
+
+void rdma_connection::register_rundown()
+{
+    DEBUG("Begin trigger the rundown's register_callback.\n");
+    _rundown.register_callback([&]() {
+
+        const int error = ECANCELED;//use ECANCELED?
+        rdma_sge_list *sge_list;
+        size_t has_not_send = 0;
+        while (_sending_queue.try_pop(&sge_list)) {
+            ASSERT(sge_list->total_length > 0);
+
+            for(auto mr_addr:sge_list->mr_list){
+                CCALL(ibv_dereg_mr(mr_addr));
+            }
+            if(sge_list->end){
+                has_not_send += sge_list->total_length;
+                if(OnSendError){
+                    OnSendError(this, (void*)sge_list->send_start, sge_list->send_length,
+                                sge_list->send_length-has_not_send, error);
+                }
+                _rundown.release();
+                has_not_send = 0;
+            }
+            else{
+                has_not_send += sge_list->total_length;
+            }
+        }
+
+        if (OnClose) {
+            OnClose(this);
+        }
+
+        if(conn_qp) rdma_destroy_qp(conn_id);
+        conn_qp = nullptr;
+        //destroy cq, channel, pd
+        if(conn_cq){
+            CCALL(ibv_destroy_cq(conn_cq));
+            conn_cq = nullptr;
+        }
+        if(conn_comp_channel){
+            CCALL(ibv_destroy_comp_channel(conn_comp_channel));
+            conn_comp_channel = nullptr;
+        };
+        if(conn_pd){
+            CCALL(ibv_dealloc_pd(conn_pd));
+            conn_pd = nullptr;
+        };
+        ASSERT_RESULT(conn_id);
+        CCALL(rdma_destroy_id(conn_id));
+        conn_id = nullptr;
+        _close_finished = true;
+        DEBUG("END ~~~ trigger the rundown's register_callback.\n");
+    });
 }
 
 void rdma_connection::close_rdma_conn()
 {
-    if(OnClose){
-        OnClose(this);
-    }
-    rdma_destroy_qp(conn_id);    
-    CCALL(ibv_destroy_cq(conn_cq));
-    CCALL(ibv_destroy_comp_channel(conn_comp_channel));
-    CCALL(ibv_dealloc_pd(conn_pd));
+    _rundown.release();
     DEBUG("Destroy part of resource pf rdma_connetion.\n");
 }
 
@@ -141,6 +179,7 @@ void rdma_connection::process_established()
     }
     ASSERT(_status.load() == CONNECTION_CONNECTED);
     //此处应该有rundown.release, 因为connect已经完成了
+    _rundown.release();
 }
 
 void rdma_connection::process_established_error()
@@ -150,24 +189,26 @@ void rdma_connection::process_established_error()
     if(OnConnectError){
         OnConnectError(this, errno);
     }
-    //需要资源的清理
+    _rundown.release();
+
 }
 
 bool rdma_connection::async_connect()
 {
     bool need_release;
-    /*if(!_rundown.try_acquire(&need_release)){
-        //关于如何触发失败操作，之后在写
-        if(need_release) { 
-            NOTICE("Some operation should be probably done when async_connect fail\n");
-        } 
-        return false;
-    }*/
-    connection_status expect = CONNECTION_NOT_CONNECTED;
-    if (!_status.compare_exchange_strong(expect, CONNECTION_CONNECTING)) { 
-        ERROR("Some unexpected happened when async_connect fail\n");
+    if (!_rundown.try_acquire(&need_release)) {
+        if (need_release) {
+            _rundown.release();
+        }
         return false;
     }
+
+    connection_status expect = CONNECTION_NOT_CONNECTED;
+    if (!_status.compare_exchange_strong(expect, CONNECTION_CONNECTING)) { 
+        _rundown.release();
+        return false;
+    }
+
     ASSERT_RESULT(conn_id);
     //rdma_resolve_addr会将conn_id绑定到某一rdma_device
     CCALL(rdma_resolve_addr(conn_id, NULL, _remote_endpoint.data(), TIMEOUT_IN_MS));
@@ -180,8 +221,22 @@ bool rdma_connection::async_connect()
 bool rdma_connection::async_close()
 {
     //需要有rundown相关的操作
-    //_rundown.shutdown() 
+    //_rundown.shutdown()
+    bool need_release;
+    if (!_rundown.try_acquire(&need_release)) {
+        if (need_release) {
+            _rundown.release();
+        }
+        return false;
+    }
+
+    if (!_rundown.shutdown()) {
+        _rundown.release();
+        return false;
+    }
+
     rdma_disconnect(conn_id);
+    //remeber to (_rundown release)
     return true;
 }
 //assume the length is no more than 2G
@@ -189,6 +244,20 @@ bool rdma_connection::async_send(const void* buffer, const size_t length)
 {
     ASSERT(buffer != nullptr); ASSERT(length > 0);
     //获取rundown
+    bool need_release;
+    if (!_rundown.try_acquire(&need_release)) {
+        if (need_release) {
+            _rundown.release();
+        }
+        return false;
+    }
+
+    connection_status cur_status = _status.load();
+    if(cur_status != CONNECTION_CONNECTED){
+        _rundown.release();
+        return false;
+    }
+
     size_t queue_size = _sending_queue.size();
 
     if(peer_start_recv.load()){
@@ -197,6 +266,7 @@ bool rdma_connection::async_send(const void* buffer, const size_t length)
                     push_and_trigger_notification(rdma_event_data::rdma_async_send(this));
         }
     }
+
     //if peer_start_recv is false then only push send_buffer into _sending_queu
 
     //!!!!!!!!!!!在检查一遍,each element int the queue contains 2 sge.
@@ -487,6 +557,13 @@ void rdma_connection::process_one_cqe(struct ibv_wc *wc) {
                 break;
             }
             case IBV_WC_RECV_RDMA_WITH_IMM: {
+                bool need_release;
+                if (!_rundown.try_acquire(&need_release)) {
+                    WARN("rdma_connection(conn_id=%ld) _rundown.try_acquire() failed\n", (uintptr_t)conn_id);
+                    _rundown.release();
+                    return;
+                }
+
                 uint32_t recv_index = ntohl(wc->imm_data);
                 recv_info* rinfo = recvinfo_pool.get(recv_index);
                 DEBUG("ready to onReceive ,have receive %ld size buffer on addr %ld (recv_index : %d).\n",
@@ -499,6 +576,8 @@ void rdma_connection::process_one_cqe(struct ibv_wc *wc) {
                 CCALL(ibv_dereg_mr(rinfo->recv_mr));
                 free((char*)rinfo->recv_addr);
                 recvinfo_pool.push(recv_index);
+
+                _rundown.release();
                 break;
             }
             case IBV_WC_SEND: {
@@ -522,6 +601,7 @@ void rdma_connection::process_one_cqe(struct ibv_wc *wc) {
                         ASSERT(sge_list->send_length);
                         OnSend(this, sge_list->send_start, sge_list->send_length);
                     }
+                    _rundown.release();
                 }
                 //deregister mr
                 for(auto mr:sge_list->mr_list)
@@ -548,6 +628,9 @@ void rdma_connection::process_one_cqe(struct ibv_wc *wc) {
                 const int error = errno;
                 OnSendError(this, sge_list->send_start, sge_list->send_length, sge_list->has_sent_len, error);
             }
+            //only end release;
+            //!!!!!!!!!!!!!!!!!!!!!!!!!
+            if(sge_list->end) _rundown.release();
         }
 
         //trigger Onhup?
@@ -568,9 +651,16 @@ void rdma_connection::process_one_cqe(struct ibv_wc *wc) {
 
 bool rdma_connection::start_receive()
 {
-    //focus to async_send
+    bool need_release;
+    if (!_rundown.try_acquire(&need_release)) {
+        if (need_release) {
+            _rundown.release();
+        }
+        return false;
+    }
+
     if (_status != CONNECTION_CONNECTED) {
-        //trigger rundown
+        _rundown.release();
         return false;
     }
 
@@ -594,6 +684,7 @@ bool rdma_connection::start_receive()
 
     CCALL(ibv_post_send(conn_qp, &wr, &bad_wr));
     DEBUG("Sending start_receive req to the connection peer.\n");
+    _rundown.release();
     return true;
 }
 

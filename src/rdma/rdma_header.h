@@ -70,7 +70,7 @@ typedef struct rdma_sge_list
 public:
     rdma_sge_list(): num_sge(0), total_length(0), end(false),send_start(nullptr),
                      send_length(0), has_sent_len(0) {}
-}rdma_sge_list;
+}erdma_sge_list;
 
 
 //控制消息

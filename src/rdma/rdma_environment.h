@@ -28,6 +28,8 @@ private:
     void push_and_trigger_notification(const rdma_event_data& notification);
     void process_epoll_env_notificaton_event_rdmafd(const uint32_t events);
 private:
+    std::atomic_bool _dispose_required_connect;
+    std::atomic_bool _dispose_required_sendrecv;
     int _efd_rdma_fd = INVALID_FD;//用于epoll处理每个rdma_connection中的comp_channel的fd，对应_loop_thread_cq
     struct rdma_event_channel   *env_ec;//仅用于在rdma建立连接时使用，对应_loop_thread_connection
     
