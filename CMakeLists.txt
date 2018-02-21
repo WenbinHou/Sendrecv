@@ -25,6 +25,6 @@ set(SOURCE_FILES
     ${COMMON_FILES}
     ${TESTS_FILES}
     ${SRC_FILES}
-)
+        )
 
 add_executable(Sendrecv ${SOURCE_FILES})

@@ -51,7 +51,7 @@ static void set_server_connection_callbacks(connection* server_conn)
         TEST_ASSERT(tmp_buf != nullptr);
         *(std::remove_const<decltype(TRADEMARK)>::type*)tmp_buf = TRADEMARK;
         memcpy((char*)tmp_buf + sizeof(TRADEMARK), buffer, length);
-        
+
         bool success = conn->async_send((char*)tmp_buf + sizeof(TRADEMARK), length);
         TEST_ASSERT(success);
     };

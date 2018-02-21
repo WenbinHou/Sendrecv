@@ -10,8 +10,8 @@
 static std::mutex client_close[THREAD_COUNT];
 static std::mutex listener_close;
 static std::mutex server_all_close;
-
 static std::atomic_int server_alive_connections(THREAD_COUNT);
+
 static std::atomic_int total_conns(0);
 static void set_server_connection_callbacks(connection* server_conn)
 {
@@ -34,7 +34,6 @@ static void set_client_connection_callbacks(connection* client_conn, const int t
         int num = ++total_conns;
         DEBUG("!!!!!!clienti %d  ready to close.\n", num);
         conn->async_close();
-        //client_conn->async_close();
 
     };
     client_conn->OnConnectError = [&](connection*, const int error) {
