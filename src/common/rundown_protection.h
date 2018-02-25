@@ -111,9 +111,9 @@ public:
         const counter_t remain = --_active_count;
 
 #ifdef UNITTEST
-        const std::make_signed<counter_t>::type sign = (std::make_signed<counter_t>::type)remain << 2 >> 2;
+        //const std::make_signed<counter_t>::type sign = (std::make_signed<counter_t>::type)remain << 2 >> 2;
         //printf("remain count: %lld\n", (long long)sign);
-        TEST_ASSERT(sign >= 0);
+        //TEST_ASSERT(sign >= 0);
 #endif
         //当_active_count==SHUTDOWN_MASK时候，表示需要调用callback来释放资源
         if (remain == SHUTDOWN_MASK) {

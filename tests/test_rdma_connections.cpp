@@ -3,7 +3,7 @@
 #include <mutex>
 #include <thread>
 
-#define LOCAL_HOST          ("127.0.0.1")
+#define LOCAL_HOST          ("192.168.168.254")
 #define LOCAL_PORT          (8801)
 #define THREAD_COUNT        (32)
 

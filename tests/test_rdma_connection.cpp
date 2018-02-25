@@ -2,7 +2,7 @@
 #include <rdma/rdma_header.h>
 #include <mutex>
 
-#define LOCAL_HOST          ("127.0.0.1")
+#define LOCAL_HOST          ("192.168.168.254")
 #define LOCAL_PORT          (8801)
 #define THREAD_COUNT        (32)
 
@@ -60,6 +60,7 @@ void test_simple_rdma_connection()
     };
 
     bool lis_success = lis->start_accept();
+    NOTICE("listener begin accept.\n");
     TEST_ASSERT(lis_success);
     
     rdma_connection *client = env.create_rdma_connection(LOCAL_HOST, LOCAL_PORT);
@@ -67,10 +68,11 @@ void test_simple_rdma_connection()
     const bool success = client->async_connect();
     TEST_ASSERT(success);
 
+    NOTICE("Waiting for client_close.\n");
     client_close.lock();
     lis->async_close();
     listener_close.lock();
-
+    NOTICE("BEGIN to exit process.\n");
     env.dispose();
 
 }

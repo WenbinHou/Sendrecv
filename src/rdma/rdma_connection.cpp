@@ -34,7 +34,7 @@ rdma_connection::rdma_connection(rdma_environment* env, struct rdma_cm_id *new_c
 
 void rdma_connection::register_rundown()
 {
-    DEBUG("Begin trigger the rundown's register_callback.\n");
+    DEBUG("Begin register the rundown's register_callback.\n");
     _rundown.register_callback([&]() {
 
         const int error = ECANCELED;//use ECANCELED?
@@ -90,7 +90,7 @@ void rdma_connection::register_rundown()
 void rdma_connection::close_rdma_conn()
 {
     _rundown.release();
-    DEBUG("Destroy part of resource pf rdma_connetion.\n");
+    DEBUG("Destroy part of resource of rdma_connetion.\n");
 }
 
 void rdma_connection::build_qp_attr(struct ibv_qp_init_attr *qp_attr)
@@ -102,7 +102,7 @@ void rdma_connection::build_qp_attr(struct ibv_qp_init_attr *qp_attr)
     qp_attr->qp_context = (void*)this;
     qp_attr->sq_sig_all = 1;
     qp_attr->cap.max_inline_data = sizeof(message)+1;
-    DEBUG("The size of message is %ld\n",sizeof(message));
+    //DEBUG("The size of message is %ld\n",sizeof(message));
     qp_attr->cap.max_send_wr = 2 * MAX_RECV_WR + 1;
     qp_attr->cap.max_recv_wr = 2 * MAX_RECV_WR + 1;
     qp_attr->cap.max_send_sge = MAX_SGE_NUM;
@@ -446,8 +446,8 @@ void rdma_connection::post_new_recv_ctl_msg()
     addr_mr* addr_mr_pair = addr_mr_pool.pop();
     //暂时每次pop的时候ibv_reg_mr，push的时候ibv_demsg_mr
     message* ctl_msg = ctl_msg_pool.pop();
-    struct ibv_mr *ctl_msg_mr = ibv_reg_mr(conn_pd, ctl_msg, sizeof(message),
-                                           IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE);
+    ASSERT(conn_pd); ASSERT(ctl_msg);
+    struct ibv_mr *ctl_msg_mr = ibv_reg_mr(conn_pd, (void*)ctl_msg, sizeof(message), IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE);
     ASSERT(ctl_msg_mr);
     addr_mr_pair->msg_addr = ctl_msg;
     addr_mr_pair->msg_mr   = ctl_msg_mr;
@@ -485,7 +485,7 @@ void rdma_connection::dereg_recycle(addr_mr* addr_mr_pair)
 
 
 void rdma_connection::process_one_cqe(struct ibv_wc *wc) {
-    if (wc->status != IBV_WC_SUCCESS) {
+    if (wc->status == IBV_WC_SUCCESS) {
         //判断是接受还是发送
         enum ibv_wc_opcode op = wc->opcode;
         switch (op) {

@@ -115,7 +115,7 @@ void rdma_environment::connection_loop()
                 break;                        
             }                                   
             case RDMA_CM_EVENT_ESTABLISHED:{
-                DEBUG("handle rdma_cm_event_established event.\n");
+                //DEBUG("handle rdma_cm_event_established event.\n");
                 if(map_id_conn.find((intptr_t)(event_copy.id)) == map_id_conn.end()){
                     rdma_connection *conn = (rdma_connection*)(((rdma_fd_data*)(event_copy.id->context))->owner);
                     conn->process_established();
@@ -139,10 +139,12 @@ void rdma_environment::connection_loop()
                 rdma_connection *conn = nullptr;
                 if(map_id_conn.find((intptr_t)(event_copy.id)) == map_id_conn.end()){
                     conn = (rdma_connection*)(((rdma_fd_data*)(event_copy.id->context))->owner);
+                    DEBUG("Active connection is disconneting.\n");
                 }
                 else{
                     conn = map_id_conn[(intptr_t)(event_copy.id)];
                     map_id_conn.erase((intptr_t)(event_copy.id));
+                    DEBUG("Passive connection is disconnecting.\n");
                 }
                 conn->close_rdma_conn();
                 break; 
@@ -218,6 +220,7 @@ void rdma_environment::sendrecv_loop()
                     struct ibv_cq *ret_cq; void *ret_ctx; struct ibv_wc wc;
                     rdma_connection *conn = (rdma_connection*)curr_rdmadata->owner;
                     CCALL(ibv_get_cq_event(conn->conn_comp_channel, &ret_cq, &ret_ctx));
+                    DEBUG("ibv_get_cq_event get a event.\n");
                     conn->ack_num++;
                     if(conn->ack_num == ACK_NUM_LIMIT){ 
                         ibv_ack_cq_events(ret_cq, conn->ack_num);
@@ -228,6 +231,7 @@ void rdma_environment::sendrecv_loop()
                     while(num_cqe = ibv_poll_cq(ret_cq, CQE_MIN_NUM, ret_wc_array)){
                         conn->process_poll_cq(ret_cq, ret_wc_array, num_cqe);
                     }
+                    DEBUG("finied ibv_poll_cq.\n");
                     break;
                 }
                 default:{
