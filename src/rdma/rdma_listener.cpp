@@ -26,32 +26,32 @@ listener(env), _bind_endpoint(bind_ip, port)
 void rdma_listener::process_accept_success(rdma_connection* new_rdma_conn)
 {
     ASSERT(new_rdma_conn);
-    bool need_release;
+    /*bool need_release;
     if (!_rundown.try_acquire(&need_release)) {
         ASSERT(new_rdma_conn->conn_id);
         WARN("rdma_connection(conn_id:%ld) _rundown.try_acquire() failed\n", (uintptr_t)new_rdma_conn->conn_id);
         _rundown.release();
         return;
-    }
+    }*/
     new_rdma_conn->_status.store(CONNECTION_CONNECTED);
     ASSERT(OnAccept);
     OnAccept(this, new_rdma_conn);
-    _rundown.release();
+   // _rundown.release();
 }
 void rdma_listener::process_accept_fail()
 {
-    bool need_release;
+    /*bool need_release;
     if (!_rundown.try_acquire(&need_release)) {
         if (need_release) {
             _rundown.release();
         }
         return;
-    }
+    }*/
     const int error = errno;
     if(OnAcceptError){
         OnAcceptError(this, error);
     }
-    _rundown.release();
+    //_rundown.release();
 }
 
 bool rdma_listener::start_accept()

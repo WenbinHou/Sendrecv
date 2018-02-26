@@ -11,10 +11,10 @@ int main(int argc, char** argv)
     //RUN_TEST(test_socket_echo_multi_thread_uds);
 
     /*the test of rdma*/
-    RUN_TEST(test_rdma_connection);
-    /*RUN_TEST(test_rdma_connections);
-    RUN_TEST(test_rdma_echo_simple);
-    RUN_TEST(test_rdma_echo_many_round);
-    RUN_TEST(test_rdma_echo_multi_thread);*/
+    //RUN_TEST(test_rdma_connection);//success
+    //RUN_TEST(test_rdma_connections);
+    RUN_TEST(test_rdma_echo_simple);//pending
+    /*RUN_TEST(test_rdma_echo_many_round);//pending
+    RUN_TEST(test_rdma_echo_multi_thread);//pending*/
     return 0;
 }

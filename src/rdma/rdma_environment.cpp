@@ -17,8 +17,7 @@ rdma_environment::rdma_environment()
     _loop_thread_connection = new std::thread([this](){
         connection_loop();
         rdma_destroy_event_channel(env_ec);
-        CCALL(close(_efd_rdma_fd));
-        _efd_rdma_fd = INVALID_FD;
+        DEBUG("connection_loop have already closed.\n");
     }); 
     _loop_thread_cq = new std::thread([this](){
         sendrecv_loop();
@@ -26,6 +25,7 @@ rdma_environment::rdma_environment()
         _notification_event_rdma_fd = INVALID_FD;
         CCALL(close(_efd_rdma_fd));
         _efd_rdma_fd = INVALID_FD;
+        DEBUG("sendrecv_loop have already closed.\n");
     });
 
 }
@@ -58,9 +58,11 @@ void rdma_environment::push_and_trigger_notification(const rdma_event_data& noti
 void rdma_environment::dispose()
 {
     // for all_debug
+    DEBUG("environment begin close.\n");
     _dispose_required_sendrecv.store(true);
     _loop_thread_cq->join();
     _loop_thread_connection->join();
+    DEBUG("environment is closeing.\n");
 
     //for debug only connection related operation
     /*_dispose_required_connect.store(true);
@@ -195,8 +197,8 @@ void rdma_environment::sendrecv_loop()
     epoll_event* events_buffer = new epoll_event[EVENT_BUFFER_COUNT];
     struct ibv_wc ret_wc_array[CQE_MIN_NUM];
     while(true){
-        const int readyCnt = epoll_wait(_efd_rdma_fd, events_buffer, 
-                EVENT_BUFFER_COUNT, /*infinity*/-1);
+       // DEBUG("---------------------------------------------\n");
+        const int readyCnt = epoll_wait(_efd_rdma_fd, events_buffer, EVENT_BUFFER_COUNT, 0);
         if(readyCnt<0){
             const int error = errno;
             if(error == EINTR) continue;

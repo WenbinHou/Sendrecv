@@ -63,34 +63,33 @@ void rdma_connection::register_rundown()
         if (OnClose) {
             OnClose(this);
         }
-
+        
+        _close_finished = true;
+        rdma_disconnect(conn_id);
         if(conn_qp) rdma_destroy_qp(conn_id);
         conn_qp = nullptr;
-        //destroy cq, channel, pd
-        if(conn_cq){
-            CCALL(ibv_destroy_cq(conn_cq));
-            conn_cq = nullptr;
-        }
-        if(conn_comp_channel){
-            CCALL(ibv_destroy_comp_channel(conn_comp_channel));
-            conn_comp_channel = nullptr;
-        };
-        if(conn_pd){
-            CCALL(ibv_dealloc_pd(conn_pd));
-            conn_pd = nullptr;
-        };
-        ASSERT_RESULT(conn_id);
-        CCALL(rdma_destroy_id(conn_id));
-        conn_id = nullptr;
-        _close_finished = true;
-        DEBUG("END ~~~ trigger the rundown's register_callback.\n");
+        //destroy cq, channel, pd 
+        DEBUG("END ~~~ have already trigger the rundown's register_callback.\n");
     });
 }
 
 void rdma_connection::close_rdma_conn()
 {
-    _rundown.release();
-    DEBUG("Destroy part of resource of rdma_connetion.\n");
+    if(conn_cq){
+        CCALL(ibv_destroy_cq(conn_cq));
+        conn_cq = nullptr;
+    }
+    if(conn_comp_channel){
+        CCALL(ibv_destroy_comp_channel(conn_comp_channel));
+        conn_comp_channel = nullptr;
+    };
+    if(conn_pd){
+        CCALL(ibv_dealloc_pd(conn_pd));
+        conn_pd = nullptr;
+    };
+    ASSERT_RESULT(conn_id);
+    CCALL(rdma_destroy_id(conn_id));
+    conn_id = nullptr;
 }
 
 void rdma_connection::build_qp_attr(struct ibv_qp_init_attr *qp_attr)
@@ -131,6 +130,7 @@ void rdma_connection::build_conn_res()
     /*在创建完资源之后，需要进行post_receive操作，将用于接受的消息注册金qp中*/
     //Be awared of that qp size should >= MAX_RECV_WR (actually >= 2*MAX_RECV_WR)
     for(int i = 0;i < MAX_RECV_WR;i++){
+        WARN("%d\n", i);
         post_new_recv_ctl_msg();
     }
     DEBUG("A connection  post %d recv_wr into qp.\n", MAX_RECV_WR);
@@ -234,9 +234,7 @@ bool rdma_connection::async_close()
         _rundown.release();
         return false;
     }
-
-    rdma_disconnect(conn_id);
-    //remeber to (_rundown release)
+    _rundown.release();
     return true;
 }
 //assume the length is no more than 2G
@@ -446,8 +444,11 @@ void rdma_connection::post_new_recv_ctl_msg()
     addr_mr* addr_mr_pair = addr_mr_pool.pop();
     //暂时每次pop的时候ibv_reg_mr，push的时候ibv_demsg_mr
     message* ctl_msg = ctl_msg_pool.pop();
+
+    char * test = (char*)malloc(1024);
     ASSERT(conn_pd); ASSERT(ctl_msg);
-    struct ibv_mr *ctl_msg_mr = ibv_reg_mr(conn_pd, (void*)ctl_msg, sizeof(message), IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE);
+    //struct ibv_mr *ctl_msg_mr = ibv_reg_mr(conn_pd, (void*)ctl_msg, sizeof(message), IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE);
+    struct ibv_mr *ctl_msg_mr = ibv_reg_mr(conn_pd, (void*)test, 1024, IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE);
     ASSERT(ctl_msg_mr);
     addr_mr_pair->msg_addr = ctl_msg;
     addr_mr_pair->msg_mr   = ctl_msg_mr;
@@ -641,6 +642,10 @@ void rdma_connection::process_one_cqe(struct ibv_wc *wc) {
         }
         //below code may need to be delete
         if(wc->status & IBV_WC_RNR_RETRY_EXC_ERR) {
+            if(_close_finished){
+                TRACE("The connection has already close.\n");
+                return;
+            }
             FATAL("The program may has bug.or the You need to review your code(status %s).\n",
                   ibv_wc_status_str(wc->status));
 

@@ -5,7 +5,7 @@
 #include <vector>
 #include <mutex>
 
-#define LOCAL_HOST          ("127.0.0.1")
+#define LOCAL_HOST          ("192.168.168.254")
 #define LOCAL_PORT          (8801)
 #define ECHO_DATA_LENGTH    (1024 * 1024 * 8)  // 8MB
 

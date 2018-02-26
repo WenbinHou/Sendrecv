@@ -29,7 +29,6 @@ static void set_client_connection_callbacks(connection* client_conn)
         SUCC("[Active Connection] OnConnect (User User-Defined)\n");
         DEBUG("client ready to close.\n");
         conn->async_close();
-        //client_conn->async_close();
 
     };
     client_conn->OnConnectError = [&](connection*, const int error) {
@@ -74,7 +73,6 @@ void test_simple_rdma_connection()
     listener_close.lock();
     NOTICE("BEGIN to exit process.\n");
     env.dispose();
-
 }
 
 BEGIN_TESTS_DECLARATION(test_rdma_connection)
