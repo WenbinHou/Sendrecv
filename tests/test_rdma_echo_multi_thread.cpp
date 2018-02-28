@@ -5,11 +5,11 @@
 #include <vector>
 #include <mutex>
 
-#define LOCAL_HOST          ("127.0.0.1")
+#define LOCAL_HOST          ("192.168.14.28")
 #define LOCAL_PORT          (8801)
 #define ECHO_DATA_LENGTH    ((size_t)1024 * 1024 * 16)  // 16MB
 #define ECHO_DATA_ROUND     ((size_t)16)
-#define THREAD_COUNT        (32)
+#define THREAD_COUNT        (8)
 
 static char dummy_data[ECHO_DATA_LENGTH];
 
@@ -33,7 +33,7 @@ static void set_server_connection_callbacks(connection* server_conn)
     };
     server_conn->OnHup = [&](connection* conn, const int error) {
         ERROR("[PassiveConnection] OnHup: %d (%s)\n", error, strerror(error));
-        conn->async_close();
+        //conn->async_close();
     };
     server_conn->OnReceive = [&](connection* conn, const void* buffer, const size_t length) {
         const long long recvd = (server_receive_bytes += length);
@@ -55,6 +55,7 @@ static void set_server_connection_callbacks(connection* server_conn)
         const long long sent = (server_send_bytes += length);
         SUCC("[PassiveConnection] OnSend: %lld (total: %lld)\n", (long long)length, (long long)sent);
         if (sent == ECHO_DATA_LENGTH * ECHO_DATA_ROUND * THREAD_COUNT) {
+            INFO("%lld",  ECHO_DATA_LENGTH * ECHO_DATA_ROUND * THREAD_COUNT);
             INFO("[PassiveConnection] All echo back data sent. (%lld)\n", sent);
         }
 
@@ -109,7 +110,7 @@ static void set_client_connection_callbacks(connection* client_conn, const int t
         SUCC("[ActiveConnectiion:%d] OnReceive: %lld (total: %lld)\n", tid, (long long)length, (long long)client_receive_bytes[tid]);
         if (client_receive_bytes[tid] == ECHO_DATA_LENGTH * ECHO_DATA_ROUND) {
             INFO("[ActiveConnectiion:%d] All echo back data received. now client async_close()\n", tid);
-            conn->async_close();
+            //conn->async_close();
         }
     };
     //when the whole buffer send finish ,then send again

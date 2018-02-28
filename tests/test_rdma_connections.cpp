@@ -3,9 +3,9 @@
 #include <mutex>
 #include <thread>
 
-#define LOCAL_HOST          ("192.168.168.254")
+#define LOCAL_HOST          ("192.168.14.28")
 #define LOCAL_PORT          (8801)
-#define THREAD_COUNT        (1)
+#define THREAD_COUNT        (4)
 
 static std::mutex client_close[THREAD_COUNT];
 static std::mutex listener_close;
@@ -19,25 +19,26 @@ static void set_server_connection_callbacks(connection* server_conn)
     server_conn->OnClose = [&](connection*) {
         SUCC("[Passive Connection] OnClose (User User-Defined)\n"); 
         if(--server_alive_connections == 0){
-            //server_all_close.unlock();
+            server_all_close.unlock();
         }
     };
 }
 static void set_client_connection_callbacks(connection* client_conn, const int tid)
 {
-    client_conn->OnClose = [&](connection*) {
+    client_conn->OnClose = [tid](connection*) {
         SUCC("[Active Connection] OnClose (User User-Defined)\n");
         client_close[tid].unlock();
+        WARN("thread %d has unlock.\n", tid);
     };
     
-    client_conn->OnConnect = [&](connection* conn) {
+    client_conn->OnConnect = [tid](connection* conn) {
         SUCC("[Active Connection] OnConnect (User User-Defined)\n");
         int num = ++total_conns;
         DEBUG("!!!!!!clienti %d  ready to close.\n", num);
         conn->async_close();
 
     };
-    client_conn->OnConnectError = [&](connection*, const int error) {
+    client_conn->OnConnectError = [tid](connection*, const int error) {
         ERROR("[Active Connection] OnConnectError: (User User-Defined) %d (%s)\n", error, strerror(error));
         TEST_FAIL();
     };
@@ -49,7 +50,7 @@ void test_multi_rdma_connection_onelisten()
         client_close[tid].lock();
     }
     listener_close.lock();
-    //server_all_close.lock();
+    server_all_close.lock();
 
     rdma_environment env;
     rdma_listener *lis = env.create_rdma_listener(LOCAL_HOST, LOCAL_PORT);
@@ -79,19 +80,22 @@ void test_multi_rdma_connection_onelisten()
             const bool success = client->async_connect();
             TEST_ASSERT(success);
             client_close[tid].lock();
+            WARN("**************thread %d has close.************\n", tid);
         });
     }
+    WARN("============================\n");
     for(int tid = 0; tid < THREAD_COUNT; ++tid){
         threads[tid].join();
     }
+    WARN("**********************\n");
     lis->async_close();
+    WARN("*************waiting for listener close. ~~~~~~~~~~~~~~~~~~~~~~~\n");
     listener_close.lock();
 
-    //server_all_close.lock();
-    DEBUG("waiting for env close ~~~~~~.\n");
+    server_all_close.lock();
+    WARN("*************waiting for env close ~~~~~~~~~~~~~~~~~~~~~~~~~.\n");
     //ASSERT(server_alive_connections == 0);
     env.dispose();
-
 }
 
 BEGIN_TESTS_DECLARATION(test_rdma_connections)

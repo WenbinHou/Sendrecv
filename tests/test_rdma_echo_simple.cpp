@@ -5,7 +5,7 @@
 #include <vector>
 #include <mutex>
 
-#define LOCAL_HOST          ("192.168.168.254")
+#define LOCAL_HOST          ("192.168.14.28")
 #define LOCAL_PORT          (8801)
 #define ECHO_DATA_LENGTH    (1024 * 1024 * 8)  // 8MB
 
@@ -65,9 +65,10 @@ static void set_client_connection_callbacks(connection* active_conn)
 {
     active_conn->OnConnect = [&](connection *conn){
         SUCC("[ActiveConnectiion] OnConnect\n");
-        conn->start_receive();
-
-        bool success = conn->async_send(dummy_data, ECHO_DATA_LENGTH);
+        bool success = conn->start_receive();
+        TEST_ASSERT(success);
+        NOTICE("ready to send data.~~~~~~~~~~\n");
+        success = conn->async_send(dummy_data, ECHO_DATA_LENGTH);
         TEST_ASSERT(success);
     };
     active_conn->OnConnectError = [&](connection*, const int error) {
@@ -120,6 +121,7 @@ void test_rdma_echo_simple()
         SUCC("[ServerListener] OnAccept\n");
         set_server_connection_callbacks(conn);
         conn->start_receive();
+        WARN("passive connection start receive.\n");
     };
     lis->OnAcceptError = [&](listener*, const int error) {
         ERROR("[ServerListener] OnAcceptError: %d (%s)\n", error, strerror(error));
@@ -135,18 +137,19 @@ void test_rdma_echo_simple()
     rdma_connection *client = env.create_rdma_connection(LOCAL_HOST ,LOCAL_PORT);
 
     set_client_connection_callbacks(client);
-    client->async_connect();
     success = client->async_connect();
-    TEST_ASSERT(success);
-
+    ASSERT(success);
+    
+    WARN("~~~~~~~~~~~~waiting client_close.\n");
     client_close.lock();
+    usleep(200);
     lis->async_close();
+    WARN("~~~~~~~~~~~~waiting listener_close.\n");
     listener_close.lock();
-
+    WARN("~~~~~~~~~~~~close environment_loop.\n");
+    //usleep(5000);
     env.dispose();
 }
-
-
 
 BEGIN_TESTS_DECLARATION(test_rdma_echo_simple)
 DECLARE_TEST(test_rdma_echo_simple)

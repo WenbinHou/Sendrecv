@@ -5,7 +5,7 @@
 #include <rdma/rdma_cma.h>
 #include <vector>
 #define TIMEOUT_IN_MS 500
-#define MAX_SEND_LEN 2147483648
+#define MAX_SEND_LEN 1073741824
 #define MAX_RECV_WR 5
 #define CQE_MIN_NUM (MAX_RECV_WR*4+1) 
 #define MAX_SGE_NUM 10
@@ -22,6 +22,7 @@ typedef struct rdma_fd_data{
         RDMATYPE_NOTIFICATION_EVENT,
         RDMATYPE_ID_CONNECTION,
         RDMATYPE_ID_LISTENER,
+        RDMATYPE_CHANNEL_EVENT,
     };
     rdma_type type;
     void* owner;
@@ -38,6 +39,11 @@ public:
         :type(RDMATYPE_NOTIFICATION_EVENT), fd(eventfd), owner(rdma_env){}
     rdma_fd_data(rdma_listener * listener)
         : type(RDMATYPE_ID_LISTENER), owner(listener), fd(INVALID_FD){ }
+    rdma_fd_data(rdma_environment *rdma_env, const int channelfd, bool ischannelfd){
+        owner = rdma_env;
+        type = RDMATYPE_CHANNEL_EVENT;
+        fd = channelfd;
+    }
 
 }rdma_fd_data;
 
@@ -82,7 +88,7 @@ typedef struct message{
         MSG_STR,
         MSG_MAX,
     };
-    msg_type type;
+    int type;
     union{
         struct{
             uint64_t addr;

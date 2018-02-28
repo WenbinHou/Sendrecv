@@ -34,7 +34,7 @@ rdma_connection::rdma_connection(rdma_environment* env, struct rdma_cm_id *new_c
 
 void rdma_connection::register_rundown()
 {
-    DEBUG("Begin register the rundown's register_callback.\n");
+    //DEBUG("Begin register the rundown's register_callback.\n");
     _rundown.register_callback([&]() {
 
         const int error = ECANCELED;//use ECANCELED?
@@ -65,9 +65,9 @@ void rdma_connection::register_rundown()
         }
         
         _close_finished = true;
-        rdma_disconnect(conn_id);
-        if(conn_qp) rdma_destroy_qp(conn_id);
-        conn_qp = nullptr;
+        //rdma_disconnect(conn_id);
+        //if(conn_qp) rdma_destroy_qp(conn_id);
+        //conn_qp = nullptr;
         //destroy cq, channel, pd 
         DEBUG("END ~~~ have already trigger the rundown's register_callback.\n");
     });
@@ -130,7 +130,6 @@ void rdma_connection::build_conn_res()
     /*在创建完资源之后，需要进行post_receive操作，将用于接受的消息注册金qp中*/
     //Be awared of that qp size should >= MAX_RECV_WR (actually >= 2*MAX_RECV_WR)
     for(int i = 0;i < MAX_RECV_WR;i++){
-        WARN("%d\n", i);
         post_new_recv_ctl_msg();
     }
     DEBUG("A connection  post %d recv_wr into qp.\n", MAX_RECV_WR);
@@ -148,7 +147,7 @@ void rdma_connection::build_conn_res()
         DEBUG("Active connetion update rdma_fd_data.\n");
     }
     epoll_event event;
-    event.events   = EPOLLIN;
+    event.events   = EPOLLIN|EPOLLET;
     event.data.ptr = &conn_type;
     ASSERT(_environment);
     CCALL(epoll_ctl(((rdma_environment*)_environment)->_efd_rdma_fd, EPOLL_CTL_ADD, conn_comp_channel->fd, &event));
@@ -256,21 +255,14 @@ bool rdma_connection::async_send(const void* buffer, const size_t length)
         return false;
     }
 
-    size_t queue_size = _sending_queue.size();
-
-    if(peer_start_recv.load()){
-        if(queue_size <= 0) {
-            ((rdma_environment*)_environment)->
-                    push_and_trigger_notification(rdma_event_data::rdma_async_send(this));
-        }
-    }
+    size_t pre_queue_size = _sending_queue.size();
 
     //if peer_start_recv is false then only push send_buffer into _sending_queu
-
     //!!!!!!!!!!!在检查一遍,each element int the queue contains 2 sge.
     size_t cur_len = length;
     const char* cur_send = (char*)buffer;
     void* send_start = (void*)const_cast<void*>(buffer);
+    //WARN("send_start:%lld\n", (uintptr_t)send_start);
     size_t send_length = length; size_t sent_len = 0;
     int push_times = 0;
 
@@ -280,7 +272,8 @@ bool rdma_connection::async_send(const void* buffer, const size_t length)
         if(cur_len > MAX_SEND_LEN) reg_size = MAX_SEND_LEN;
         else reg_size = cur_len;
         //此pending_list需要放置到wr_id上，用于在完成操作后，ibv_dereg_mr
-        rdma_sge_list *pending_list = rdma_sge_pool.pop();
+        rdma_sge_list *pending_list = new rdma_sge_list();//rdma_sge_pool.pop();
+        //WARN("pendinglist:%lld\n", (uintptr_t)pending_list);
         pending_list->send_start  = send_start;
         pending_list->send_length = send_length;
         //注册内存
@@ -292,10 +285,13 @@ bool rdma_connection::async_send(const void* buffer, const size_t length)
         pending_list->has_sent_len = sent_len;
 
         //add a 16bytes to record recv_buffer addrs and recv_size
-        pending_list->sge_list.push_back((struct ibv_sge){(uintptr_t)cur_send, (uint32_t)reg_size, mr->lkey});
+        struct ibv_sge tmp = {(uintptr_t)cur_send, (uint32_t)reg_size, mr->lkey};
+        pending_list->sge_list.push_back(tmp);
         pending_list->mr_list.push_back(mr);
+        //ERROR("----------------------------\n");
         //pending_list将其放入_sending_queue中
         _sending_queue.push(pending_list);
+        //ERROR("----------------------------\n");
         TRACE("push %ld sge with total_length %ld into queue.\n",pending_list->num_sge, pending_list->total_length );
         //judge the whether send is finish
 
@@ -317,6 +313,16 @@ bool rdma_connection::async_send(const void* buffer, const size_t length)
     size_t new_size = _sending_queue.size();
     TRACE("push %d sending data into _sending_queue(now_size:%ld)\n", push_times, new_size);
    
+    if(peer_start_recv.load()){
+        if(pre_queue_size <= 0) {
+            ((rdma_environment*)_environment)->
+                    push_and_trigger_notification(rdma_event_data::rdma_async_send(this));
+            TRACE("start_recv has ready.\n");
+        }
+    }
+    else{
+        TRACE("start_recv has not ready.\n");
+    }
     return true;
 }
 
@@ -331,13 +337,14 @@ void rdma_connection::post_send_req_msg(rdma_sge_list* sge_list, bool isDecrease
 
     addr_mr* addr_mr_pair = addr_mr_pool.pop();
     message *ctl_msg      = ctl_msg_pool.pop();
-    struct ibv_mr *ctl_msg_mr = ibv_reg_mr(conn_pd, ctl_msg, sizeof(message),
+    struct ibv_mr *ctl_msg_mr = ibv_reg_mr(conn_pd, ctl_msg, sizeof(*ctl_msg),
                                            IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE);
     ASSERT(ctl_msg_mr);
     addr_mr_pair->msg_addr = ctl_msg;
     addr_mr_pair->msg_mr   = ctl_msg_mr;
 
     struct ibv_send_wr wr, *bad_wr = nullptr; struct ibv_sge sge;
+    memset(&wr, 0, sizeof(wr));
     ctl_msg->type = message::MSG_REQ;
     ctl_msg->data.peeding_send_size = sge_list->total_length;
     ctl_msg->send_ctx_addr = (uintptr_t)sge_list;//记录要发送的数据的位置，想不到更好的方法了
@@ -349,8 +356,9 @@ void rdma_connection::post_send_req_msg(rdma_sge_list* sge_list, bool isDecrease
     wr.wr_id   = (uintptr_t)addr_mr_pair;
     wr.next    = nullptr;
     wr.opcode  = IBV_WR_SEND;
+    wr.num_sge = 1;
     wr.sg_list = &sge;
-    wr.send_flags = IBV_SEND_INLINE;
+    //wr.send_flags = IBV_SEND_INLINE;
 
     CCALL(ibv_post_send(conn_qp, &wr, &bad_wr));
     int cur_pwr;
@@ -361,7 +369,6 @@ void rdma_connection::post_send_req_msg(rdma_sge_list* sge_list, bool isDecrease
     DEBUG("Sending MSG_REQ to peer :request %lld size recv_buffer, send_ctx_addr is %lld (peer rest wr is >= %d).\n",
           (long long)ctl_msg->data.peeding_send_size,
           (long long)ctl_msg->send_ctx_addr, cur_pwr);
-
 
 }
 
@@ -398,7 +405,7 @@ void rdma_connection::post_send_ackctl_msg(message::msg_type type, uint64_t addr
 {
     addr_mr *addr_mr_pair = addr_mr_pool.pop();
     message *send_ctl_msg = ctl_msg_pool.pop();
-    struct ibv_mr *send_ctl_msg_mr = ibv_reg_mr(conn_pd, send_ctl_msg, sizeof(message),
+    struct ibv_mr *send_ctl_msg_mr = ibv_reg_mr(conn_pd, send_ctl_msg, sizeof(*send_ctl_msg),
                                                 IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE);
     ASSERT(send_ctl_msg_mr);
     addr_mr_pair->msg_addr = send_ctl_msg;
@@ -411,13 +418,17 @@ void rdma_connection::post_send_ackctl_msg(message::msg_type type, uint64_t addr
     send_ctl_msg->recv_addr_index = recv_addr_index;
 
     struct ibv_send_wr wr, *bad_wr = nullptr; struct ibv_sge sge;
+    memset(&wr, 0, sizeof(wr));
     sge.addr = (uintptr_t) send_ctl_msg;
     sge.length = sizeof(*send_ctl_msg);
     sge.lkey = send_ctl_msg_mr->lkey;
 
-    wr.wr_id = (uintptr_t) addr_mr_pair; wr.opcode = IBV_WR_SEND;
-    wr.next = nullptr; wr.sg_list = &sge; wr.num_sge = 1;
-    wr.send_flags = IBV_SEND_INLINE;
+    wr.wr_id = (uintptr_t) addr_mr_pair; 
+    wr.opcode = IBV_WR_SEND;
+    wr.next = nullptr; 
+    wr.sg_list = &sge; 
+    wr.num_sge = 1;
+    //wr.send_flags = IBV_SEND_INLINE;
     CCALL(ibv_post_send(conn_qp, &wr, &bad_wr));
 }
 
@@ -440,24 +451,25 @@ void rdma_connection::post_new_recv_ctl_msg()
 {
     struct ibv_recv_wr wr, *bad_wr = NULL;
     struct ibv_sge sge;
-
     addr_mr* addr_mr_pair = addr_mr_pool.pop();
     //暂时每次pop的时候ibv_reg_mr，push的时候ibv_demsg_mr
     message* ctl_msg = ctl_msg_pool.pop();
-
-    char * test = (char*)malloc(1024);
+    //WARN("sizeof message:%d\n", sizeof(int));
     ASSERT(conn_pd); ASSERT(ctl_msg);
-    //struct ibv_mr *ctl_msg_mr = ibv_reg_mr(conn_pd, (void*)ctl_msg, sizeof(message), IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE);
-    struct ibv_mr *ctl_msg_mr = ibv_reg_mr(conn_pd, (void*)test, 1024, IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE);
+    struct ibv_mr *ctl_msg_mr = ibv_reg_mr(conn_pd, ctl_msg, sizeof(*ctl_msg), 
+            IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE);
     ASSERT(ctl_msg_mr);
     addr_mr_pair->msg_addr = ctl_msg;
     addr_mr_pair->msg_mr   = ctl_msg_mr;
 
-    sge.addr = (uintptr_t)ctl_msg; sge.length  = sizeof(message);
+    memset(&wr, 0, sizeof(wr));
+    sge.addr    = (uintptr_t)ctl_msg; 
+    sge.length  = sizeof(*ctl_msg);
     sge.lkey    = ctl_msg_mr->lkey;
 
-    wr.wr_id   = (uintptr_t)addr_mr_pair; wr.next = nullptr;
-    wr.sg_list = &sge; wr.num_sge = 1;
+    wr.wr_id   = (uintptr_t)addr_mr_pair; 
+    wr.sg_list = &sge;
+    wr.num_sge = 1;
 
     CCALL(ibv_post_recv(conn_qp, &wr, &bad_wr));
 }
@@ -466,7 +478,8 @@ void rdma_connection::post_reuse_recv_ctl_msg(addr_mr* reuse_addr_mr)
 {
     ASSERT(reuse_addr_mr);
     struct ibv_recv_wr wr, *bad_wr = nullptr; struct ibv_sge sge;
-    memset(reuse_addr_mr->msg_addr, 0, sizeof(*reuse_addr_mr->msg_addr));
+    memset(&wr, 0, sizeof(wr));
+    //memset(reuse_addr_mr->msg_addr, 0, sizeof(*reuse_addr_mr->msg_addr));
     sge.addr   = (uintptr_t)reuse_addr_mr->msg_addr;
     sge.length = sizeof(*reuse_addr_mr->msg_addr);
     sge.lkey   = reuse_addr_mr->msg_mr->lkey;
@@ -486,17 +499,22 @@ void rdma_connection::dereg_recycle(addr_mr* addr_mr_pair)
 
 
 void rdma_connection::process_one_cqe(struct ibv_wc *wc) {
+    //WARN("curstate:%s\n", ibv_wc_status_str(wc->status));
     if (wc->status == IBV_WC_SUCCESS) {
         //判断是接受还是发送
         enum ibv_wc_opcode op = wc->opcode;
+        WARN("byte_len:%ld\n", wc->byte_len);
+        //if(wc->opcode & IBV_WC_RECV) WARN("!!!%d %d %d\n", 
+        //IBV_WC_RECV_RDMA_WITH_IMM,IBV_WC_RDMA_WRITE,  wc->opcode);
         switch (op) {
             case IBV_WC_RECV: {
-                message *recv_ctl_msg = ((addr_mr*) wc->wr_id)->msg_addr;
-                message::msg_type recv_type = recv_ctl_msg->type;
+                message *recv_ctl_msg = ((addr_mr*) wc->wr_id)->msg_addr; 
+                WARN("%ld %d %d\n", (uintptr_t)recv_ctl_msg, recv_ctl_msg->recv_addr_index, recv_ctl_msg->type);
+                int recv_type = recv_ctl_msg->type;
                 if(recv_type == message::MSG_REQ){
                     uintptr_t peer_send_ctx_addr = recv_ctl_msg->send_ctx_addr;
                     size_t recv_size = recv_ctl_msg->data.peeding_send_size;
-                    char *recv_buffer = (char *) malloc(recv_size);
+                    char *recv_buffer = (char *)malloc(recv_size);
                     //how to
                     struct ibv_mr *recv_buffer_mr = ibv_reg_mr(conn_pd, recv_buffer, recv_size,
                                                                IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE);
@@ -527,8 +545,8 @@ void rdma_connection::process_one_cqe(struct ibv_wc *wc) {
                     uint32_t imm_data_index = recv_ctl_msg->recv_addr_index;
                     post_send_rdma_write(pending_send_sge_list, peer_addr, peer_rkey, imm_data_index);
 
-                    DEBUG("Sending real message to peer (send_ctx_addr:%lld ; peer_addr:%lld ; peer_rkey:%lld.\n",
-                          (long long)pending_send_sge_list, (long long)peer_addr, (long long)peer_rkey);
+                    DEBUG("Sending real message to peer (send_ctx_addr:%lld ; peer_addr:%lld ; peer_rkey:%lld, imm_data_index:%lld.\n", 
+                            (long long)pending_send_sge_list, (long long)peer_addr, (long long)peer_rkey, (long long)imm_data_index);
                     //when recv a ack,_sending_queue is not empty, then send one, or peer_rest_wr++
                     rdma_sge_list *new_sge_list;
                     bool flag = _sending_queue.try_pop(&new_sge_list);
@@ -549,7 +567,6 @@ void rdma_connection::process_one_cqe(struct ibv_wc *wc) {
                     peer_start_recv.store(true);
                     ((rdma_environment*)_environment)->
                             push_and_trigger_notification(rdma_event_data::rdma_async_send(this));
-
                 }
                 else{
                     FATAL("Cannot handle recv_type %d.\n", (int)recv_type);
@@ -577,7 +594,6 @@ void rdma_connection::process_one_cqe(struct ibv_wc *wc) {
                 CCALL(ibv_dereg_mr(rinfo->recv_mr));
                 free((char*)rinfo->recv_addr);
                 recvinfo_pool.push(recv_index);
-
                 _rundown.release();
                 break;
             }
@@ -597,7 +613,7 @@ void rdma_connection::process_one_cqe(struct ibv_wc *wc) {
                 rdma_sge_list* sge_list = (rdma_sge_list*)wc->wr_id;
                 ASSERT(sge_list);
                 if(sge_list->end){
-                    TRACE("Have complete a buffer send with addr : %ld.\n",(uintptr_t)sge_list->send_start );
+                    TRACE("Have complete a buffer send with addr : %ld.\n",(uintptr_t)sge_list->send_start);
                     if(OnSend) {
                         ASSERT(sge_list->send_length);
                         OnSend(this, sge_list->send_start, sge_list->send_length);
@@ -607,7 +623,10 @@ void rdma_connection::process_one_cqe(struct ibv_wc *wc) {
                 //deregister mr
                 for(auto mr:sge_list->mr_list)
                     CCALL(ibv_dereg_mr(mr));
-                rdma_sge_pool.push(sge_list);
+                //sge_list->sge_list.clear();
+                //sge_list->mr_list.clear();
+                delete sge_list;
+                //rdma_sge_pool.push(sge_list);
                 break;
             }
             default: {
@@ -619,6 +638,7 @@ void rdma_connection::process_one_cqe(struct ibv_wc *wc) {
     }
     //handle error message, remember to capture IBV_WC_RNR_RETRY_EXC_ERR event, this means program has bug
     else{
+        ERROR("process_one_cqe error.\n");
         enum ibv_wc_opcode op = wc->opcode;
         if(op == IBV_WC_RDMA_WRITE){
             rdma_sge_list* sge_list = (rdma_sge_list*)wc->wr_id;
@@ -640,14 +660,16 @@ void rdma_connection::process_one_cqe(struct ibv_wc *wc) {
             const int error = errno;
             OnHup(this, error);
         }
+
+        FATAL("The program may has bug.or the You need to review your code(status:%s).\n",
+                  ibv_wc_status_str(wc->status));
         //below code may need to be delete
         if(wc->status & IBV_WC_RNR_RETRY_EXC_ERR) {
             if(_close_finished){
                 TRACE("The connection has already close.\n");
                 return;
             }
-            FATAL("The program may has bug.or the You need to review your code(status %s).\n",
-                  ibv_wc_status_str(wc->status));
+            //FATAL("The program may has bug.or the You need to review your code(status:%s).\n",  ibv_wc_status_str(wc->status));
 
             ASSERT(0);
         }
@@ -668,23 +690,27 @@ bool rdma_connection::start_receive()
         _rundown.release();
         return false;
     }
-
-    addr_mr* addr_mr_pair = addr_mr_pool.pop();
+    addr_mr *addr_mr_pair = addr_mr_pool.pop();
     message *ctl_msg      = ctl_msg_pool.pop();
-    struct ibv_mr *ctl_msg_mr = ibv_reg_mr(conn_pd, ctl_msg, sizeof(message),
-                                           IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE);
+
+    ctl_msg->type = message::MSG_STR;
+    struct ibv_mr *ctl_msg_mr = ibv_reg_mr(conn_pd, ctl_msg, sizeof(*ctl_msg), IBV_ACCESS_LOCAL_WRITE);
     ASSERT(ctl_msg_mr);
-    addr_mr_pair->msg_addr = ctl_msg; addr_mr_pair->msg_mr   = ctl_msg_mr;
+    addr_mr_pair->msg_addr = ctl_msg; 
+    addr_mr_pair->msg_mr   = ctl_msg_mr;
 
     struct ibv_send_wr wr, *bad_wr = nullptr; struct ibv_sge sge;
-    ctl_msg->type = message::MSG_STR;
-
+    WARN("sizeof ctl_msg:%d messagetype:%d\n", sizeof(*ctl_msg), ctl_msg->type);
+    
+    memset(&wr, 0, sizeof(wr));
     sge.addr = (uintptr_t)ctl_msg;
     sge.length = sizeof(*ctl_msg);
     sge.lkey = ctl_msg_mr->lkey;
 
-    wr.wr_id   = (uintptr_t)addr_mr_pair; wr.next    = nullptr;
-    wr.opcode  = IBV_WR_SEND; wr.sg_list = &sge;
+    wr.wr_id   = (uintptr_t)addr_mr_pair; //wr.next    = nullptr;
+    wr.opcode  = IBV_WR_SEND; 
+    wr.sg_list = &sge;
+    wr.num_sge = 1;
     wr.send_flags = IBV_SEND_INLINE;
 
     CCALL(ibv_post_send(conn_qp, &wr, &bad_wr));

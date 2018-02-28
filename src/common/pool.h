@@ -3,6 +3,11 @@
 #include <type_traits>
 #include <atomic>
 #include <sched.h>
+#include <new>
+
+#undef NDEBUG
+#undef _NDEBUG
+#include <cassert>
 
 
 template<typename T>
@@ -115,7 +120,8 @@ public:
 
         T* result = (T*)_head;
         if (result == nullptr) {
-            result = new T();
+            result = new (std::nothrow) T();
+            assert(result);
         } 
         else {
             _head = *(T**)result;

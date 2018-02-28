@@ -2,7 +2,7 @@
 #include <rdma/rdma_header.h>
 #include <mutex>
 
-#define LOCAL_HOST          ("192.168.168.254")
+#define LOCAL_HOST          ("192.168.14.28")
 #define LOCAL_PORT          (8801)
 #define THREAD_COUNT        (32)
 
