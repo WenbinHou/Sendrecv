@@ -5,7 +5,7 @@
 
 #define LOCAL_HOST          ("192.168.14.28")
 #define LOCAL_PORT          (8801)
-#define THREAD_COUNT        (4)
+#define THREAD_COUNT        (32)
 
 static std::mutex client_close[THREAD_COUNT];
 static std::mutex listener_close;
@@ -76,7 +76,7 @@ void test_multi_rdma_connection_onelisten()
         threads[tid] = std::thread([tid, &env](){
             rdma_connection *client = env.create_rdma_connection(LOCAL_HOST, LOCAL_PORT);
             set_client_connection_callbacks(client, tid);
-            std::this_thread::sleep_for(std::chrono::milliseconds(tid * 4));
+            std::this_thread::sleep_for(std::chrono::milliseconds(tid * 4* 10));
             const bool success = client->async_connect();
             TEST_ASSERT(success);
             client_close[tid].lock();

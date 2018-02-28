@@ -10,15 +10,13 @@ rdma_connection::rdma_connection(rdma_environment *env, const char* connect_ip, 
     CCALL(rdma_create_id(env->env_ec, &conn_id, &conn_type, RDMA_PS_TCP));
     //当前状态是未连接
     _status.store(CONNECTION_NOT_CONNECTED);
-
     int test_peer_rest_wr = peer_rest_wr.load();
     ASSERT(test_peer_rest_wr == MAX_RECV_WR);
     register_rundown();
-
 }
 
 rdma_connection::rdma_connection(rdma_environment* env, struct rdma_cm_id *new_conn_id, struct rdma_cm_id *listen_id)
-    :connection(env), conn_id(new_conn_id), peer_rest_wr(MAX_RECV_WR),recvinfo_pool()
+    :connection(env), conn_id(new_conn_id), peer_rest_wr(MAX_RECV_WR)
 {
     peer_start_recv.store(false);//the peer recv is not ready for receive
     int test_peer_rest_wr = peer_rest_wr.load();
@@ -209,11 +207,7 @@ bool rdma_connection::async_connect()
     }
 
     ASSERT_RESULT(conn_id);
-    //rdma_resolve_addr会将conn_id绑定到某一rdma_device
     CCALL(rdma_resolve_addr(conn_id, NULL, _remote_endpoint.data(), TIMEOUT_IN_MS));
-    /*
-     * 如果出现错误应该怎么处理，是否需要像触发某些操作
-     */
     return true;
 }
 
@@ -395,6 +389,7 @@ void rdma_connection::try_to_send()
 
 void rdma_connection::process_poll_cq(struct ibv_cq *ret_cq, struct ibv_wc *ret_wc_array, int num_cqe)
 {
+    WARN("num_cqe is %d\n", num_cqe); 
     for(int i = 0;i < num_cqe;i++){
         process_one_cqe(ret_wc_array+i);    
     }
@@ -503,7 +498,7 @@ void rdma_connection::process_one_cqe(struct ibv_wc *wc) {
     if (wc->status == IBV_WC_SUCCESS) {
         //判断是接受还是发送
         enum ibv_wc_opcode op = wc->opcode;
-        WARN("byte_len:%ld\n", wc->byte_len);
+        //WARN("byte_len:%ld\n", wc->byte_len);
         //if(wc->opcode & IBV_WC_RECV) WARN("!!!%d %d %d\n", 
         //IBV_WC_RECV_RDMA_WITH_IMM,IBV_WC_RDMA_WRITE,  wc->opcode);
         switch (op) {

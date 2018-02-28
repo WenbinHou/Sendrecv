@@ -1,32 +1,29 @@
 #include "rdma_header.h"
-#include <signal.h>
 #include <net.h>
 #include <sys/epoll.h>
 #define CQ_SIZE 100
 
 rdma_environment::rdma_environment()
 {
-    _dispose_required_connect.store(false);
-    _dispose_required_sendrecv.store(false);
+    _dispose_required.store(false);
     env_ec = rdma_create_event_channel();
     _efd_rdma_fd = CCALL(epoll_create1(EPOLL_CLOEXEC));
     _notification_event_rdma_fd = CCALL(eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK));
     _notification_event_rdma_fddata = rdma_fd_data(this, _notification_event_rdma_fd);
     
+    MAKE_NONBLOCK(env_ec->fd);
+    _rdma_channel_fddata = rdma_fd_data(this, env_ec->fd, true);
+    epoll_add(&_rdma_channel_fddata, EPOLLIN|EPOLLET);
     epoll_add(&_notification_event_rdma_fddata, EPOLLIN | EPOLLET);
-    //开启两个线程来进行连接和收发处理
-    _loop_thread_connection = new std::thread([this](){
-        connection_loop();
-        rdma_destroy_event_channel(env_ec);
-        DEBUG("connection_loop have already closed.\n");
-    }); 
-    _loop_thread_cq = new std::thread([this](){
-        sendrecv_loop();
+    
+    _loop_thread = new std::thread([this](){
+        main_loop();
         CCALL(close(_notification_event_rdma_fd));
         _notification_event_rdma_fd = INVALID_FD;
         CCALL(close(_efd_rdma_fd));
         _efd_rdma_fd = INVALID_FD;
-        DEBUG("sendrecv_loop have already closed.\n");
+        rdma_destroy_event_channel(env_ec);
+        DEBUG("main_loop have already closed.\n");
     });
 
 }
@@ -64,14 +61,10 @@ void rdma_environment::dispose()
 {
     // for all_debug
     DEBUG("environment begin close.\n");
-    _dispose_required_sendrecv.store(true);
-    _loop_thread_cq->join();
-    _loop_thread_connection->join();
+    _dispose_required.store(true);
+    _loop_thread->join();
+    //_loop_thread_connection->join();
     DEBUG("environment is closeing.\n");
-    //for debug only connection related operation
-    /*_dispose_required_connect.store(true);
-    _loop_thread_connection->join();
-     */
 }
 
 void rdma_environment::build_params(struct rdma_conn_param *params)
@@ -81,12 +74,13 @@ void rdma_environment::build_params(struct rdma_conn_param *params)
     params->rnr_retry_count = 10;
 }
 
-void rdma_environment::connection_loop()
+void rdma_environment::process_rdma_channel(const uint32_t events)
 {
-    DEBUG("ENVIRONMENT start connection_loop.\n");
+    ASSERT(events & EPOLLIN);
     struct rdma_cm_event *event = nullptr;
     struct rdma_conn_param cm_params;
     build_params(&cm_params);
+
     while(rdma_get_cm_event(env_ec, &event) == 0){
         struct rdma_cm_event event_copy;
         memcpy(&event_copy, event, sizeof(*event));
@@ -137,7 +131,6 @@ void rdma_environment::connection_loop()
                         new_passive_conn->local_endpoint().to_string().c_str(),
                         new_passive_conn->remote_endpoint().to_string().c_str());
                 }
-                //!!!!!!!!!!!!!!这之后需要将comp_channel和_efd_conn_关联!!!!!!!!!!!!!!!!!!
                 break;                        
             }
             case RDMA_CM_EVENT_DISCONNECTED:{
@@ -186,25 +179,21 @@ void rdma_environment::connection_loop()
                 break;
             }
         }
-        if(_dispose_required_connect){
-            DEBUG("_dispose_require_connect has change to the true, ready close connection_loop.\n");
-            break;
-        }
     }
-    //ERROR("xxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n");
+    //else ERROR("process_rdma_channel occur unexpected event.\n");
+    ERROR("*************************************\n");
    return;
 }
 
-void rdma_environment::sendrecv_loop()
+void rdma_environment::main_loop()
 {
-    DEBUG("ENVIRONMENT start sendrecv_loop.\n");
+    DEBUG("ENVIRONMENT start main_loop.\n");
     const int EVENT_BUFFER_COUNT = 256;
     epoll_event* events_buffer = new epoll_event[EVENT_BUFFER_COUNT];
     struct ibv_wc ret_wc_array[CQE_MIN_NUM];
     while(true){
-        DEBUG("---------------------------------------------\n");
-        const int readyCnt = epoll_wait(_efd_rdma_fd, events_buffer, EVENT_BUFFER_COUNT, -1);
-        DEBUG("epoll_wait readyCnt = %d.\n", readyCnt);
+       // DEBUG("---------------------------------------------\n");
+        const int readyCnt = epoll_wait(_efd_rdma_fd, events_buffer, EVENT_BUFFER_COUNT, 0);
         if(readyCnt<0){
             const int error = errno;
             if(error == EINTR) continue;
@@ -216,8 +205,15 @@ void rdma_environment::sendrecv_loop()
             const uint32_t curr_events = events_buffer[i].events;
             const rdma_fd_data* curr_rdmadata = (rdma_fd_data*)events_buffer[i].data.ptr;
             switch(curr_rdmadata->type){
+                case rdma_fd_data::RDMATYPE_CHANNEL_EVENT:{
+                    TRACE("trigger rdma_channel fd = %d.\n", env_ec->fd);
+                    ASSERT(this == curr_rdmadata->owner);
+                    ASSERT(curr_rdmadata->fd == env_ec->fd);
+                    this->process_rdma_channel(curr_events);
+                    break;
+                }
                 case rdma_fd_data::RDMATYPE_NOTIFICATION_EVENT:{
-                    TRACE("trigger rdma_eventfd = %d\n", curr_rdmadata->fd);
+                    TRACE("trigger rdma_eventfd = %d %d\n", curr_rdmadata->fd, _notification_event_rdma_fd);
                     ASSERT(this == curr_rdmadata->owner);
                     ASSERT(curr_rdmadata->fd == _notification_event_rdma_fd);
                     this->process_epoll_env_notificaton_event_rdmafd(curr_events);
@@ -229,15 +225,15 @@ void rdma_environment::sendrecv_loop()
                     rdma_connection *conn = (rdma_connection*)curr_rdmadata->owner;
                     CCALL(ibv_get_cq_event(conn->conn_comp_channel, &ret_cq, &ret_ctx));
                     //DEBUG("ibv_get_cq_event get a event.\n");
-                   // conn->ack_num++;
-                    //if(conn->ack_num == ACK_NUM_LIMIT){ 
-                        //ibv_ack_cq_events(ret_cq, conn->ack_num);
-                        ibv_ack_cq_events(ret_cq, 1);
-                      //  conn->ack_num = 0;
-                    //}
+                    conn->ack_num++;
+                    if(conn->ack_num == ACK_NUM_LIMIT){ 
+                        ibv_ack_cq_events(ret_cq, conn->ack_num);
+                        conn->ack_num = 0;
+                    }
                     CCALL(ibv_req_notify_cq(ret_cq, 0));
                     int num_cqe;
                     while(num_cqe = ibv_poll_cq(ret_cq, CQE_MIN_NUM, ret_wc_array)){
+                        TRACE("ibv_poll_cq() get %d cqe.\n", num_cqe);
                         conn->process_poll_cq(ret_cq, ret_wc_array, num_cqe);
                     }
                     //DEBUG("finied ibv_poll_cq.\n");
@@ -250,11 +246,9 @@ void rdma_environment::sendrecv_loop()
             }
         }
         //此处要加入一个判断是否需要停止loop的东西
-        if(_dispose_required_sendrecv){
-            _dispose_required_connect.store(true);
-            DEBUG("ready to close the sendrecv_loop, then close the connection_loop.\n");
-            //CCALL(pthread_kill(connect_pthread, SIGUSR1));
-            close(env_ec->fd);
+        if(_dispose_required){
+            _dispose_required.store(true);
+            DEBUG("ready to close the main_loop.\n");
             break;
         }
     }
