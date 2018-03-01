@@ -63,10 +63,8 @@ void rdma_connection::register_rundown()
         }
         
         _close_finished = true;
+        //判断当前这个链接
         //rdma_disconnect(conn_id);
-        //if(conn_qp) rdma_destroy_qp(conn_id);
-        //conn_qp = nullptr;
-        //destroy cq, channel, pd 
         DEBUG("END ~~~ have already trigger the rundown's register_callback.\n");
     });
 }
@@ -74,6 +72,8 @@ void rdma_connection::register_rundown()
 void rdma_connection::close_rdma_conn()
 {
     if(conn_cq){
+        if(ack_num != 0)
+            ibv_ack_cq_events(conn_cq, ack_num);
         CCALL(ibv_destroy_cq(conn_cq));
         conn_cq = nullptr;
     }
@@ -85,7 +85,8 @@ void rdma_connection::close_rdma_conn()
         CCALL(ibv_dealloc_pd(conn_pd));
         conn_pd = nullptr;
     };
-    ASSERT_RESULT(conn_id);
+    ASSERT_RESULT(conn_id);ASSERT(conn_qp);
+    rdma_destroy_qp(conn_id);conn_qp = nullptr;
     CCALL(rdma_destroy_id(conn_id));
     conn_id = nullptr;
 }
@@ -213,8 +214,6 @@ bool rdma_connection::async_connect()
 
 bool rdma_connection::async_close()
 {
-    //需要有rundown相关的操作
-    //_rundown.shutdown()
     bool need_release;
     if (!_rundown.try_acquire(&need_release)) {
         if (need_release) {
@@ -227,7 +226,7 @@ bool rdma_connection::async_close()
         _rundown.release();
         return false;
     }
-    _rundown.release();
+    ((rdma_environment*)_environment)->push_and_trigger_notification(rdma_event_data::rdma_connection_close(this));
     return true;
 }
 //assume the length is no more than 2G
@@ -250,9 +249,8 @@ bool rdma_connection::async_send(const void* buffer, const size_t length)
     }
 
     size_t pre_queue_size = _sending_queue.size();
-
     //if peer_start_recv is false then only push send_buffer into _sending_queu
-    //!!!!!!!!!!!在检查一遍,each element int the queue contains 2 sge.
+    //!!!!!!!!!!!在检查一遍,each element int the queue contains 2 sge
     size_t cur_len = length;
     const char* cur_send = (char*)buffer;
     void* send_start = (void*)const_cast<void*>(buffer);

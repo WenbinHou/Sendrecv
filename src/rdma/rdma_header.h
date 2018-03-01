@@ -9,7 +9,7 @@
 #define MAX_RECV_WR 10
 #define CQE_MIN_NUM (MAX_RECV_WR*4+1) 
 #define MAX_SGE_NUM 10
-#define ACK_NUM_LIMIT 10 //暂时设置为1
+#define ACK_NUM_LIMIT 10 //暂时设置为10
 #define RECVMAP_MAX   5000
 class rdma_connection;
 class rdma_listener;
@@ -53,13 +53,37 @@ typedef struct rdma_event_data
     {
         RDMA_EVENTTPYE_UNKNOWN = 0,
         RDMA_EVENTTYPE_ASYNC_SEND,
-        RDMA_EVENTTYPE_START_RECV,
+        RDMA_EVENTTYPE_ENVIRONMENT_DISPOSE,
+        RDMA_EVENTTYPE_CONNECTION_CLOSE,
+        RDMA_EVENTTYPE_CONNECTION_CONNECT_FAILED,
+        RDMA_EVENTTYPE_CONNECTION_RUNDOWN_RELEASE,
+        RDMA_EVENTTYPE_LISTENER_CLOSE,
+        RDMA_EVENTTYPE_LISTENER_RUNDOWN_RELEASE,
         RDMA_EVENTTYPE_MAX,
     };
     rdma_event_type type;
     void* owner;
+
     static rdma_event_data rdma_async_send(connection* conn) {
         return rdma_event_data{RDMA_EVENTTYPE_ASYNC_SEND, conn};
+    }
+    static rdma_event_data rdma_environment_dispose(environment* env) {
+        return rdma_event_data{ RDMA_EVENTTYPE_ENVIRONMENT_DISPOSE, env };
+    }
+    static rdma_event_data rdma_connection_close(connection* conn) {
+        return rdma_event_data{ RDMA_EVENTTYPE_CONNECTION_CLOSE, conn};
+    }
+    static rdma_event_data rdma_connection_connect_failed(connection* conn) {
+        return rdma_event_data{ RDMA_EVENTTYPE_CONNECTION_CONNECT_FAILED, conn };
+    }
+    static rdma_event_data rdma_connection_rundown_release(connection* conn) {
+        return rdma_event_data{ RDMA_EVENTTYPE_CONNECTION_RUNDOWN_RELEASE, conn};
+    }
+    static rdma_event_data rdma_listener_close(listener* listen) {
+        return rdma_event_data{ RDMA_EVENTTYPE_LISTENER_CLOSE, listen};
+    }
+    static rdma_event_data rdma_listener_rundown_release(listener* listen) {
+        return rdma_event_data{ RDMA_EVENTTYPE_LISTENER_RUNDOWN_RELEASE, listen};
     }
 }rdma_event_data;
 //一个rdma_sge_list表示要一起rdma write的数据

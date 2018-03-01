@@ -2,6 +2,7 @@
 #include <rdma/rdma_header.h>
 #include <mutex>
 #include <thread>
+#include <vector>
 
 #define LOCAL_HOST          ("192.168.14.28")
 #define LOCAL_PORT          (8801)
@@ -12,6 +13,7 @@ static std::mutex listener_close;
 static std::mutex server_all_close;
 static std::atomic_int server_alive_connections(THREAD_COUNT);
 static std::atomic_int total_conns(0);
+static std::vector<connection*> server_conns;
 
 static void set_server_connection_callbacks(connection* server_conn)
 {
@@ -56,6 +58,7 @@ void test_multi_rdma_connection_onelisten()
     rdma_listener *lis = env.create_rdma_listener(LOCAL_HOST, LOCAL_PORT);
     lis->OnAccept = [&](listener*, connection* conn) {
         SUCC("[ServerListener] OnAccept\n");
+        server_conns.push_back(conn);
         set_server_connection_callbacks(conn);
         SUCC("[ServerListener] established a passive rdma connection.\n");
     };
@@ -92,6 +95,8 @@ void test_multi_rdma_connection_onelisten()
     WARN("*************waiting for listener close. ~~~~~~~~~~~~~~~~~~~~~~~\n");
     listener_close.lock();
 
+    for(connection* tmpconn:server_conns)
+        tmpconn->async_close();
     server_all_close.lock();
     WARN("*************waiting for env close ~~~~~~~~~~~~~~~~~~~~~~~~~.\n");
     //ASSERT(server_alive_connections == 0);

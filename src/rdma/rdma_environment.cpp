@@ -61,9 +61,8 @@ void rdma_environment::dispose()
 {
     // for all_debug
     DEBUG("environment begin close.\n");
-    _dispose_required.store(true);
+    push_and_trigger_notification(rdma_event_data::rdma_environment_dispose(this));
     _loop_thread->join();
-    //_loop_thread_connection->join();
     DEBUG("environment is closeing.\n");
 }
 
@@ -145,7 +144,7 @@ void rdma_environment::process_rdma_channel(const uint32_t events)
                     map_id_conn.erase((intptr_t)(event_copy.id));
                     DEBUG("Passive connection is disconnecting.\n");
                 }
-                conn->close_rdma_conn();
+                //conn->close_rdma_conn();
                 break; 
             }
             case RDMA_CM_EVENT_ADDR_ERROR:
@@ -180,8 +179,6 @@ void rdma_environment::process_rdma_channel(const uint32_t events)
             }
         }
     }
-    //else ERROR("process_rdma_channel occur unexpected event.\n");
-    ERROR("*************************************\n");
    return;
 }
 
@@ -193,7 +190,7 @@ void rdma_environment::main_loop()
     struct ibv_wc ret_wc_array[CQE_MIN_NUM];
     while(true){
        // DEBUG("---------------------------------------------\n");
-        const int readyCnt = epoll_wait(_efd_rdma_fd, events_buffer, EVENT_BUFFER_COUNT, 0);
+        const int readyCnt = epoll_wait(_efd_rdma_fd, events_buffer, EVENT_BUFFER_COUNT, -1);
         if(readyCnt<0){
             const int error = errno;
             if(error == EINTR) continue;
@@ -228,6 +225,7 @@ void rdma_environment::main_loop()
                     conn->ack_num++;
                     if(conn->ack_num == ACK_NUM_LIMIT){ 
                         ibv_ack_cq_events(ret_cq, conn->ack_num);
+                        TRACE("ibv_ack_cq_events %d\n", ACK_NUM_LIMIT);
                         conn->ack_num = 0;
                     }
                     CCALL(ibv_req_notify_cq(ret_cq, 0));
@@ -246,8 +244,7 @@ void rdma_environment::main_loop()
             }
         }
         //此处要加入一个判断是否需要停止loop的东西
-        if(_dispose_required){
-            _dispose_required.store(true);
+        if(_dispose_required.load()){
             DEBUG("ready to close the main_loop.\n");
             break;
         }
@@ -268,6 +265,21 @@ void rdma_environment::process_epoll_env_notificaton_event_rdmafd(const uint32_t
             case rdma_event_data::RDMA_EVENTTYPE_ASYNC_SEND:{
                 rdma_connection* conn = (rdma_connection*)evdata.owner;
                 conn->process_rdma_async_send();
+                break;
+            }
+            case rdma_event_data::RDMA_EVENTTYPE_CONNECTION_CLOSE:{
+                rdma_connection* conn = (rdma_connection*)evdata.owner;
+                conn->_rundown.release();
+                break;
+            }
+            case rdma_event_data::RDMA_EVENTTYPE_ENVIRONMENT_DISPOSE:{
+                _dispose_required.store(true);
+                TRACE("trigger RDMA_EVENTTYPE_ENVIRONMENT_DISPOSE .\n");
+                break;
+            }
+            default: {
+                FATAL("BUG: Unknown rdma_environment event_type: %d\n", (int)evdata.type);
+                ASSERT(0);break;
             }
             //there should be other rdma_event_data
                 //  LISTENER_CLOSE LISTENER_RUNDOWN_RELEASE

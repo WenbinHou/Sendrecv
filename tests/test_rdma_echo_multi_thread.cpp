@@ -5,9 +5,10 @@
 #include <vector>
 #include <mutex>
 
+
 #define LOCAL_HOST          ("192.168.14.28")
 #define LOCAL_PORT          (8801)
-#define ECHO_DATA_LENGTH    ((size_t)1024 * 1024*256)  // 16MB
+#define ECHO_DATA_LENGTH    ((size_t)1024 * 1024* 16)  // 16MB
 #define ECHO_DATA_ROUND     ((size_t)16)
 #define THREAD_COUNT        (32)
 
@@ -21,6 +22,7 @@ static std::mutex client_close[THREAD_COUNT];
 static std::mutex listener_close;
 static std::mutex server_all_close;
 static std::atomic_int server_alive_connections(THREAD_COUNT);
+static std::vector<connection*> connection_list;
 
 static void set_server_connection_callbacks(connection* server_conn)
 {
@@ -57,6 +59,10 @@ static void set_server_connection_callbacks(connection* server_conn)
         if (sent == ECHO_DATA_LENGTH * ECHO_DATA_ROUND * THREAD_COUNT) {
             INFO("%lld\n",  ECHO_DATA_LENGTH * ECHO_DATA_ROUND * THREAD_COUNT);
             INFO("[PassiveConnection] All echo back data sent. (%lld)\n", sent);
+            for(connection* tmpconn:connection_list){
+                bool success = tmpconn->async_close();
+                ASSERT(success);
+            }
         }
 
         void* org_buf = (char*)buffer - sizeof(TRADEMARK);
@@ -119,7 +125,6 @@ static void set_client_connection_callbacks(connection* client_conn, const int t
         client_send_bytes[tid] += length;
 
         SUCC("[ActiveConnectiion:%d] OnSend: %lld (%lld rounds)\n", tid, (long long)length, (long long)client_send_bytes[tid] / ECHO_DATA_LENGTH);
-        //fprintf(stderr, "[Client:%d] OnSend: %lld (%lld rounds)\n", tid, (long long)length, (long long)client_send_bytes[tid] / ECHO_DATA_LENGTH);
 
         if (client_send_bytes[tid] < ECHO_DATA_LENGTH * ECHO_DATA_ROUND) {
             const bool success = conn->async_send(dummy_data, ECHO_DATA_LENGTH);
@@ -150,6 +155,7 @@ void test_rdma_echo_multi_thread()
         SUCC("[ServerListener] OnAccept: %s -> %s\n",
              ((rdma_connection*)conn)->local_endpoint().to_string().c_str(),
              ((rdma_connection*)conn)->remote_endpoint().to_string().c_str());
+        connection_list.push_back(conn);
         set_server_connection_callbacks(conn);
         conn->start_receive();
     };
@@ -187,10 +193,14 @@ void test_rdma_echo_multi_thread()
     lis->async_close();
     listener_close.lock();
 
+
+    WARN("server_all_close waiting..........\n");
+    server_all_close.lock();
+    WARN("server_alive_connection = %d\n", server_alive_connections.load());
+    //ASSERT(server_alive_connections == 0);
+    usleep(1000);
     env.dispose();
 
-    server_all_close.lock();
-    ASSERT(server_alive_connections == 0);
 }
 
 
