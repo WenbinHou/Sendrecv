@@ -7,16 +7,11 @@ listener(env), _bind_endpoint(bind_ip, port)
     CCALL(rdma_create_id(env->env_ec, &listener_rdma_id, &listen_type, RDMA_PS_TCP));
     ASSERT(listener_rdma_id);
     CCALL(rdma_bind_addr(listener_rdma_id, _bind_endpoint.data()));
-    //按照文彬的方式
     _start_accept_required.store(false);
-
-    // Register rundown protection callback
     _rundown.register_callback([&]() {
-        // Invoke OnClose callback
         if (OnClose) {
             OnClose(this);
         }
-
         ASSERT_RESULT(listener_rdma_id);
         CCALL(rdma_destroy_id(listener_rdma_id));
         listener_rdma_id = nullptr;
@@ -89,7 +84,7 @@ bool rdma_listener::async_close()
         _rundown.release();
         return false;
     }
-    //immediately _rundown.release?
     _rundown.release();
+    ((rdma_environment*)_environment)->push_and_trigger_notification(rdma_event_data::rdma_listener_close(this));
     return true;
 }

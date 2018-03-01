@@ -221,8 +221,8 @@ void rdma_environment::main_loop()
                     struct ibv_cq *ret_cq; void *ret_ctx; struct ibv_wc wc;
                     rdma_connection *conn = (rdma_connection*)curr_rdmadata->owner;
                     CCALL(ibv_get_cq_event(conn->conn_comp_channel, &ret_cq, &ret_ctx));
-                    //DEBUG("ibv_get_cq_event get a event.\n");
                     conn->ack_num++;
+                    //此处会有坑
                     if(conn->ack_num == ACK_NUM_LIMIT){ 
                         ibv_ack_cq_events(ret_cq, conn->ack_num);
                         TRACE("ibv_ack_cq_events %d\n", ACK_NUM_LIMIT);
@@ -234,7 +234,6 @@ void rdma_environment::main_loop()
                         TRACE("ibv_poll_cq() get %d cqe.\n", num_cqe);
                         conn->process_poll_cq(ret_cq, ret_wc_array, num_cqe);
                     }
-                    //DEBUG("finied ibv_poll_cq.\n");
                     break;
                 }
                 default:{
@@ -243,7 +242,6 @@ void rdma_environment::main_loop()
                 }
             }
         }
-        //此处要加入一个判断是否需要停止loop的东西
         if(_dispose_required.load()){
             DEBUG("ready to close the main_loop.\n");
             break;
@@ -272,6 +270,11 @@ void rdma_environment::process_epoll_env_notificaton_event_rdmafd(const uint32_t
                 conn->_rundown.release();
                 break;
             }
+            case rdma_event_data::RDMA_EVENTTYPE_LISTENER_CLOSE:{
+                rdma_listener* lis = (rdma_listener*)evdata.owner;
+                lis->_rundown.release();
+                break;
+            }
             case rdma_event_data::RDMA_EVENTTYPE_ENVIRONMENT_DISPOSE:{
                 _dispose_required.store(true);
                 TRACE("trigger RDMA_EVENTTYPE_ENVIRONMENT_DISPOSE .\n");
@@ -281,8 +284,6 @@ void rdma_environment::process_epoll_env_notificaton_event_rdmafd(const uint32_t
                 FATAL("BUG: Unknown rdma_environment event_type: %d\n", (int)evdata.type);
                 ASSERT(0);break;
             }
-            //there should be other rdma_event_data
-                //  LISTENER_CLOSE LISTENER_RUNDOWN_RELEASE
         }
     }
 }
