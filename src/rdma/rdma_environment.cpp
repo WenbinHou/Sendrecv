@@ -137,14 +137,16 @@ void rdma_environment::process_rdma_channel(const uint32_t events)
                 rdma_connection *conn = nullptr;
                 if(map_id_conn.find((intptr_t)(event_copy.id)) == map_id_conn.end()){
                     conn = (rdma_connection*)(((rdma_fd_data*)(event_copy.id->context))->owner);
+                    conn->_status.store(CONNECTION_CLOSED);
                     DEBUG("Active connection is disconneting.\n");
                 }
                 else{
                     conn = map_id_conn[(intptr_t)(event_copy.id)];
+                    conn->_status.store(CONNECTION_CLOSED);
                     map_id_conn.erase((intptr_t)(event_copy.id));
                     DEBUG("Passive connection is disconnecting.\n");
                 }
-                //conn->close_rdma_conn();
+                conn->close_rdma_conn();
                 break; 
             }
             case RDMA_CM_EVENT_ADDR_ERROR:
@@ -251,6 +253,35 @@ void rdma_environment::main_loop()
     return;
 }
 
+long long rdma_environment::get_curtime(){
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    return tv.tv_sec*1000000 + tv.tv_usec;
+}
+
+void rdma_environment::process_close_queue(){
+    while(true){
+        close_conn_info *conn_info;
+        bool issuc = _ready_close_queue.try_front(&conn_info);
+        if(!issuc) break;
+        else{
+            if(get_curtime() - (conn_info->time_ready_close) >= 2000){
+                if(conn_info->closing_conn->_status.load() == CONNECTION_CONNECTED)
+                    rdma_disconnect(conn_info->closing_conn->conn_id);
+                else{
+                    ASSERT(conn_info->closing_conn->_status.load() == CONNECTION_CLOSED);
+                }
+                _ready_close_queue.pop();
+                continue;
+            }
+            else break;
+        }
+    }
+    if(_ready_close_queue.size() > 0){
+        push_and_trigger_notification(rdma_event_data::rdma_connection_close());
+    }
+
+}
 //目前要处理的内容只有发送操作
 void rdma_environment::process_epoll_env_notificaton_event_rdmafd(const uint32_t events)
 {
@@ -266,8 +297,9 @@ void rdma_environment::process_epoll_env_notificaton_event_rdmafd(const uint32_t
                 break;
             }
             case rdma_event_data::RDMA_EVENTTYPE_CONNECTION_CLOSE:{
-                rdma_connection* conn = (rdma_connection*)evdata.owner;
-                conn->_rundown.release();
+                //rdma_connection* conn = (rdma_connection*)evdata.owner;
+                //conn->_rundown.release();
+                this->process_close_queue();
                 break;
             }
             case rdma_event_data::RDMA_EVENTTYPE_LISTENER_CLOSE:{

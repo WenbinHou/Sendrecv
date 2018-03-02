@@ -7,6 +7,7 @@ enum connection_status
     CONNECTION_CONNECTING,
     CONNECTION_CONNECTED,
     CONNECTION_CONNECT_FAILED,
+    CONNECTION_CLOSED,
 };
 
 class connection

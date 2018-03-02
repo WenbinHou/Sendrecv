@@ -5,10 +5,12 @@ rdma_connection::rdma_connection(rdma_environment *env, const char* connect_ip, 
     :connection(env), _remote_endpoint(connect_ip, port), peer_rest_wr(MAX_RECV_WR), recvinfo_pool()
 {
     //创建rdma_cm_id,并注意关联id对应的类型是conn还是用于listen
-    peer_start_recv.store(false);//the peer recv is not ready for receive
+    peer_start_recv.store(false);//false means that the peer recv is not ready for receive
+    self_ready_closed.store(false);//false means that connection self doesn't call async_close
+    peer_ready_closed.store(false);//false means that this side connection doesn't recv the ack of close
+    self_ready_close.store(false);
     conn_type = rdma_fd_data(this);
     CCALL(rdma_create_id(env->env_ec, &conn_id, &conn_type, RDMA_PS_TCP));
-    //当前状态是未连接
     _status.store(CONNECTION_NOT_CONNECTED);
     int test_peer_rest_wr = peer_rest_wr.load();
     ASSERT(test_peer_rest_wr == MAX_RECV_WR);
@@ -19,22 +21,21 @@ rdma_connection::rdma_connection(rdma_environment* env, struct rdma_cm_id *new_c
     :connection(env), conn_id(new_conn_id), peer_rest_wr(MAX_RECV_WR)
 {
     peer_start_recv.store(false);//the peer recv is not ready for receive
+    self_ready_closed.store(false);//false means that connection self doesn't call async_close
+    peer_ready_closed.store(false);//false means that this side connection doesn't recv the ack of close
+    self_ready_close.store(false);
     int test_peer_rest_wr = peer_rest_wr.load();
     ASSERT(test_peer_rest_wr == MAX_RECV_WR);
-    //解析本地和对方地址以及端口
     update_local_endpoint();
     update_remote_endpoint();
     build_conn_res();
- 
     conn_lis = (rdma_listener*)(((rdma_fd_data*)(listen_id->context))->owner);
     register_rundown();
 }
 
 void rdma_connection::register_rundown()
 {
-    //DEBUG("Begin register the rundown's register_callback.\n");
     _rundown.register_callback([&]() {
-
         const int error = ECANCELED;//use ECANCELED?
         rdma_sge_list *sge_list;
         size_t has_not_send = 0;
@@ -63,14 +64,19 @@ void rdma_connection::register_rundown()
         }
         
         _close_finished = true;
-        //判断当前这个链接
-        //rdma_disconnect(conn_id);
+        //rdma_disconnect(conn_id);//error call function
         DEBUG("END ~~~ have already trigger the rundown's register_callback.\n");
     });
 }
 
+long long rdma_connection::get_curtime(){
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    return tv.tv_sec*1000000 + tv.tv_usec;
+}
 void rdma_connection::close_rdma_conn()
 {
+    //may have error
     if(conn_cq){
         if(ack_num != 0)
             ibv_ack_cq_events(conn_cq, ack_num);
@@ -100,7 +106,6 @@ void rdma_connection::build_qp_attr(struct ibv_qp_init_attr *qp_attr)
     qp_attr->qp_context = (void*)this;
     qp_attr->sq_sig_all = 1;
     qp_attr->cap.max_inline_data = sizeof(message)+1;
-    //DEBUG("The size of message is %ld\n",sizeof(message));
     qp_attr->cap.max_send_wr = 2 * MAX_RECV_WR + 1;
     qp_attr->cap.max_recv_wr = 2 * MAX_RECV_WR + 1;
     qp_attr->cap.max_send_sge = MAX_SGE_NUM;
@@ -128,7 +133,8 @@ void rdma_connection::build_conn_res()
     //注册MAX_RECV_WR用于接受控制信息的资源
     /*在创建完资源之后，需要进行post_receive操作，将用于接受的消息注册金qp中*/
     //Be awared of that qp size should >= MAX_RECV_WR (actually >= 2*MAX_RECV_WR)
-    for(int i = 0;i < MAX_RECV_WR;i++){
+    //why is MAX_RECV_WR+ 1? because the additional one post_recv for receiving MSG_STR and ACK_CLOSE
+    for(int i = 0;i < MAX_RECV_WR +1 ;i++){
         post_new_recv_ctl_msg();
     }
     DEBUG("A connection  post %d recv_wr into qp.\n", MAX_RECV_WR);
@@ -212,7 +218,7 @@ bool rdma_connection::async_connect()
     return true;
 }
 
-bool rdma_connection::async_close()
+/*bool rdma_connection::async_close()
 {
     bool need_release;
     if (!_rundown.try_acquire(&need_release)) {
@@ -228,8 +234,64 @@ bool rdma_connection::async_close()
     }
     ((rdma_environment*)_environment)->push_and_trigger_notification(rdma_event_data::rdma_connection_close(this));
     return true;
+}*/
+
+bool rdma_connection::async_close()
+{
+    bool need_release;
+    if (!_rundown.try_acquire(&need_release)) {
+        if (need_release) {
+            _rundown.release();
+        }
+        return false;
+    }
+
+    if (!_rundown.shutdown()) {
+        _rundown.release();
+        return false;
+    }
+
+    self_ready_close.store(true);
+    addr_mr *addr_mr_pair = addr_mr_pool.pop();
+    message *ctl_msg      = ctl_msg_pool.pop();
+
+    ctl_msg->type = message::ACK_CLOSE;
+    struct ibv_mr *ctl_msg_mr = ibv_reg_mr(conn_pd, ctl_msg, sizeof(*ctl_msg), IBV_ACCESS_LOCAL_WRITE);
+    ASSERT(ctl_msg_mr);
+    addr_mr_pair->msg_addr = ctl_msg;
+    addr_mr_pair->msg_mr   = ctl_msg_mr;
+
+    struct ibv_send_wr wr, *bad_wr = nullptr; struct ibv_sge sge;
+
+    memset(&wr, 0, sizeof(wr));
+    sge.addr = (uintptr_t)ctl_msg;
+    sge.length = sizeof(*ctl_msg);
+    sge.lkey = ctl_msg_mr->lkey;
+
+    wr.wr_id   = (uintptr_t)addr_mr_pair;
+    wr.opcode  = IBV_WR_SEND;
+    wr.sg_list = &sge;
+    wr.num_sge = 1;
+    wr.send_flags = IBV_SEND_INLINE;
+
+    CCALL(ibv_post_send(conn_qp, &wr, &bad_wr));
+    DEBUG("Sending async_close req to the connection peer.\n");
+
+    if(peer_ready_closed.load()){
+        //wait for the IBV_WC_SEND has finished.
+    }
+    else{
+        //wait for the IBV_WC_SEND and IBV_WC_RECV
+    }
+
+    //_rundown.release();
+    //!!!!!remember _rundown.release() when receive the ack_close && self_ready_close is true
+    //if self_ready_close is false. and receive the ack_close ,cannot release
+
+    return true;
 }
-//assume the length is no more than 2G
+
+//assume the length is no more than 1G
 bool rdma_connection::async_send(const void* buffer, const size_t length)
 {
     ASSERT(buffer != nullptr); ASSERT(length > 0);
@@ -492,23 +554,17 @@ void rdma_connection::dereg_recycle(addr_mr* addr_mr_pair)
 
 
 void rdma_connection::process_one_cqe(struct ibv_wc *wc) {
-    //WARN("curstate:%s\n", ibv_wc_status_str(wc->status));
     if (wc->status == IBV_WC_SUCCESS) {
         //判断是接受还是发送
         enum ibv_wc_opcode op = wc->opcode;
-        //WARN("byte_len:%ld\n", wc->byte_len);
-        //if(wc->opcode & IBV_WC_RECV) WARN("!!!%d %d %d\n", 
-        //IBV_WC_RECV_RDMA_WITH_IMM,IBV_WC_RDMA_WRITE,  wc->opcode);
         switch (op) {
             case IBV_WC_RECV: {
-                message *recv_ctl_msg = ((addr_mr*) wc->wr_id)->msg_addr; 
-                WARN("%ld %d %d\n", (uintptr_t)recv_ctl_msg, recv_ctl_msg->recv_addr_index, recv_ctl_msg->type);
+                message *recv_ctl_msg = ((addr_mr*) wc->wr_id)->msg_addr;
                 int recv_type = recv_ctl_msg->type;
                 if(recv_type == message::MSG_REQ){
                     uintptr_t peer_send_ctx_addr = recv_ctl_msg->send_ctx_addr;
                     size_t recv_size = recv_ctl_msg->data.peeding_send_size;
                     char *recv_buffer = (char *)malloc(recv_size);
-                    //how to
                     struct ibv_mr *recv_buffer_mr = ibv_reg_mr(conn_pd, recv_buffer, recv_size,
                                                                IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE);
                     //reuse recv_ctl_msg and arm the post recv before send_ackctl_msg
@@ -561,6 +617,30 @@ void rdma_connection::process_one_cqe(struct ibv_wc *wc) {
                     ((rdma_environment*)_environment)->
                             push_and_trigger_notification(rdma_event_data::rdma_async_send(this));
                 }
+                else if(recv_type == message::ACK_CLOSE){
+                    DEBUG("connection recv ack_close request.\n");
+                    post_reuse_recv_ctl_msg((addr_mr*)wc->wr_id);
+                    peer_ready_closed.store(true);
+                    if(!self_ready_close.load()){
+                        //trigger Onhup
+                        const int error = errno;
+                        if(OnHup)
+                            OnHup(this, error);
+                    }
+                    else{
+                        if(self_ready_closed.load()){
+                            //push to the close queue
+                            ((rdma_environment*)_environment)->_ready_close_queue.
+                                    push(close_conn_info(get_curtime(), this));
+                            ((rdma_environment*)_environment)->
+                                    push_and_trigger_notification(rdma_event_data::rdma_connection_close());
+                            _rundown.release();
+                        }
+                        else{
+                            //wait for IBV_WC_SEND has finished
+                        }
+                    }
+                }
                 else{
                     FATAL("Cannot handle recv_type %d.\n", (int)recv_type);
                     ASSERT(0);
@@ -591,9 +671,27 @@ void rdma_connection::process_one_cqe(struct ibv_wc *wc) {
                 break;
             }
             case IBV_WC_SEND: {
+                //!!!!! whether is close
+
                 addr_mr* send_addr_mr = (addr_mr*) wc->wr_id;
                 ASSERT(send_addr_mr);
-                TRACE("Have complete a req msg send with addr : %ld.\n", (uintptr_t)send_addr_mr->msg_addr);
+                message* msg_addr = send_addr_mr->msg_addr;
+                TRACE("Have complete a msg send with addr : %ld, type = %d\n", (uintptr_t)msg_addr, msg_addr->type);
+                if(msg_addr->type == message::ACK_CLOSE){
+                    self_ready_closed.store(true);
+                    if(peer_ready_closed.load()){
+                        //push to close queue
+                        ((rdma_environment*)_environment)->_ready_close_queue.
+                                push(close_conn_info(get_curtime(), this));
+                        ((rdma_environment*)_environment)->
+                                push_and_trigger_notification(rdma_event_data::rdma_connection_close());
+                        _rundown.release();
+                    }
+                    else{
+                        //wait for IBV_WC_RECV
+                    }
+                }
+
                 //deregister and recycle pool
                 CCALL(ibv_dereg_mr(send_addr_mr->msg_mr));
                 ctl_msg_pool.push(send_addr_mr->msg_addr);
@@ -642,8 +740,6 @@ void rdma_connection::process_one_cqe(struct ibv_wc *wc) {
                 const int error = errno;
                 OnSendError(this, sge_list->send_start, sge_list->send_length, sge_list->has_sent_len, error);
             }
-            //only end release;
-            //!!!!!!!!!!!!!!!!!!!!!!!!!
             if(sge_list->end) _rundown.release();
         }
 
@@ -689,19 +785,18 @@ bool rdma_connection::start_receive()
     ctl_msg->type = message::MSG_STR;
     struct ibv_mr *ctl_msg_mr = ibv_reg_mr(conn_pd, ctl_msg, sizeof(*ctl_msg), IBV_ACCESS_LOCAL_WRITE);
     ASSERT(ctl_msg_mr);
-    addr_mr_pair->msg_addr = ctl_msg; 
+    addr_mr_pair->msg_addr = ctl_msg;
     addr_mr_pair->msg_mr   = ctl_msg_mr;
 
     struct ibv_send_wr wr, *bad_wr = nullptr; struct ibv_sge sge;
-    WARN("sizeof ctl_msg:%d messagetype:%d\n", sizeof(*ctl_msg), ctl_msg->type);
-    
+
     memset(&wr, 0, sizeof(wr));
     sge.addr = (uintptr_t)ctl_msg;
     sge.length = sizeof(*ctl_msg);
     sge.lkey = ctl_msg_mr->lkey;
 
     wr.wr_id   = (uintptr_t)addr_mr_pair; //wr.next    = nullptr;
-    wr.opcode  = IBV_WR_SEND; 
+    wr.opcode  = IBV_WR_SEND;
     wr.sg_list = &sge;
     wr.num_sge = 1;
     wr.send_flags = IBV_SEND_INLINE;

@@ -1,18 +1,14 @@
 #ifndef _RDMA_CONNECTION_H
 #define _RDMA_CONNECTION_H
-//#include "rdma_header.h"
-//#include <connection.h> 不需要include connection.h 在rdma_header中的sendrecv.h已经引入了
+
+#include <atomic>
 
 class rdma_connection : public connection
 {
     friend class rdma_environment;
     friend class rdma_listener;
 private:
-    //主动建立连接
     rdma_connection(rdma_environment* env, const char* connect_ip, const uint16_t port);
-    //通过listener建立连接,这个不再需要了
-    //rdma_connection(rdma_environment* env, const struct rdma_cm_id *cm_id, const endpoint& remote_ep);
-    //通过env建立连接
     rdma_connection(rdma_environment* env, struct rdma_cm_id *new_conn_id, struct rdma_cm_id* listen_id);
 public:
     bool async_connect() override;
@@ -44,11 +40,11 @@ private:
                               uint32_t peer_rkey, uint32_t recv_addr_index);
     void post_send_req_msg(rdma_sge_list* sge_list, bool isDecrease, addr_mr* reuse_addr_mr);
     void dereg_recycle(addr_mr* addr_mr_pair);
+    long long get_curtime();
 private:
     volatile bool _close_finished = false;
     rundown_protection _rundown;
     std::atomic<connection_status> _status;
-    //一个rdma_connection由五个结构体构成，id, pd，qp, cq, comp_channel
     struct rdma_cm_id         *conn_id = nullptr;
     struct ibv_context        *conn_ctx = nullptr;
     struct ibv_pd             *conn_pd = nullptr;
@@ -71,8 +67,11 @@ private:
     pool<rdma_sge_list>     rdma_sge_pool;
 
     arraypool<recv_info> recvinfo_pool;
-    //int _immediate_connect_error = 0;
-    //
+
+    //parameter about close
+    std::atomic<bool>        self_ready_closed;//when have already send the ack of close
+    std::atomic<bool>        peer_ready_closed;//when recv an ack of close
+    std::atomic<bool>        self_ready_close;//when use function async_close
 };
 
 #endif

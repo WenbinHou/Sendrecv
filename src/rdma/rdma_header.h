@@ -47,6 +47,7 @@ public:
 
 }rdma_fd_data;
 
+
 typedef struct rdma_event_data
 {
     enum rdma_event_type
@@ -72,6 +73,9 @@ typedef struct rdma_event_data
     }
     static rdma_event_data rdma_connection_close(connection* conn) {
         return rdma_event_data{ RDMA_EVENTTYPE_CONNECTION_CLOSE, conn};
+    }
+    static rdma_event_data rdma_connection_close() {
+        return rdma_event_data{ RDMA_EVENTTYPE_CONNECTION_CLOSE, nullptr};
     }
     static rdma_event_data rdma_connection_connect_failed(connection* conn) {
         return rdma_event_data{ RDMA_EVENTTYPE_CONNECTION_CONNECT_FAILED, conn };
@@ -100,8 +104,16 @@ typedef struct rdma_sge_list
 public:
     rdma_sge_list(): num_sge(0), total_length(0), end(false),send_start(nullptr),
                      send_length(0), has_sent_len(0) {}
-}erdma_sge_list;
+}rdma_sge_list;
 
+typedef struct close_conn_info{
+    long long time_ready_close;
+    rdma_connection *closing_conn;
+public:
+    close_conn_info(long long time, rdma_connection* conn)
+            :time_ready_close(time), closing_conn(conn){}
+
+}close_conn_info;
 
 //控制消息
 typedef struct message{
@@ -110,6 +122,7 @@ typedef struct message{
         MSG_REQ,
         MSG_ACK,
         MSG_STR,
+        ACK_CLOSE,
         MSG_MAX,
     };
     int type;

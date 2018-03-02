@@ -1,11 +1,11 @@
 #ifndef _RDMA_ENV_H
 #define _RDMA_ENV_H
-//#include <environment.h> 不需要此include
 #include <thread>
 #include <pthread.h>
 #include <unordered_map>
 #include <sys/epoll.h>
 #include <sys/eventfd.h>
+#include "rdma_header.h"
 
 class rdma_environment: public environment
 {
@@ -30,6 +30,8 @@ private:
     void epoll_add(rdma_fd_data* fddata, const uint32_t events) const;
     void push_and_trigger_notification(const rdma_event_data& notification);
     void process_epoll_env_notificaton_event_rdmafd(const uint32_t events);
+    void process_close_queue();
+    long long get_curtime();
 private:
     int _efd_test = INVALID_FD;
     std::atomic_bool _dispose_required;
@@ -49,6 +51,7 @@ private:
     rdma_fd_data _notification_event_rdma_fddata;
     rdma_fd_data _rdma_channel_fddata;
     tsqueue<rdma_event_data> _notification_rdma_queue;//此队列中暂时只处理发送的操作，不进行连接等操作的处
+    tsqueue<close_conn_info> _ready_close_queue;
 };
 
 

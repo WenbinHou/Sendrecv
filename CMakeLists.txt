@@ -25,6 +25,6 @@ set(SOURCE_FILES
     ${COMMON_FILES}
     ${TESTS_FILES}
     ${SRC_FILES}
-        )
+        tests/test_rdma_echo_multi_thread2.cpp)
 
 add_executable(Sendrecv ${SOURCE_FILES})

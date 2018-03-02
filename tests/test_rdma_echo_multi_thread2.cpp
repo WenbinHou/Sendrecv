@@ -22,7 +22,6 @@ static std::mutex client_close[THREAD_COUNT];
 static std::mutex listener_close;
 static std::mutex server_all_close;
 static std::atomic_int server_alive_connections(THREAD_COUNT);
-static std::vector<connection*> connection_list;
 
 static void set_server_connection_callbacks(connection* server_conn)
 {
@@ -34,7 +33,13 @@ static void set_server_connection_callbacks(connection* server_conn)
         SUCC("[PassiveConnection] OnClose\n");
     };
     server_conn->OnHup = [&](connection* conn, const int error) {
-        ERROR("[PassiveConnection] OnHup: %d (%s)\n", error, strerror(error));
+        if (error == 0) {
+            SUCC("[ServerConnection] OnHup: %d (%s)\n", error, strerror(error));
+        }
+        else {
+            ERROR("[ServerConnection] OnHup: %d (%s)\n", error, strerror(error));
+            TEST_FAIL();
+        }
         conn->async_close();
     };
     server_conn->OnReceive = [&](connection* conn, const void* buffer, const size_t length) {
@@ -58,10 +63,6 @@ static void set_server_connection_callbacks(connection* server_conn)
         SUCC("[PassiveConnection] OnSend: %lld (total: %lld)\n", (long long)length, (long long)sent);
         if (sent == ECHO_DATA_LENGTH * ECHO_DATA_ROUND * THREAD_COUNT) {
             INFO("[PassiveConnection] All echo back data sent. (%lld)\n", sent);
-            for(connection* tmpconn:connection_list){
-                bool success = tmpconn->async_close();
-                ASSERT(success);
-            }
         }
 
         void* org_buf = (char*)buffer - sizeof(TRADEMARK);
@@ -136,7 +137,7 @@ static void set_client_connection_callbacks(connection* client_conn, const int t
     };
 }
 
-void test_rdma_echo_multi_thread2()
+void test_rdma_echo_multi_thread()
 {
     for (size_t i = 0; i < ECHO_DATA_LENGTH; ++i) {
         dummy_data[i] = (char)(unsigned char)i;
@@ -154,7 +155,6 @@ void test_rdma_echo_multi_thread2()
         SUCC("[ServerListener] OnAccept: %s -> %s\n",
              ((rdma_connection*)conn)->local_endpoint().to_string().c_str(),
              ((rdma_connection*)conn)->remote_endpoint().to_string().c_str());
-        connection_list.push_back(conn);
         set_server_connection_callbacks(conn);
         conn->start_receive();
     };
@@ -187,7 +187,7 @@ void test_rdma_echo_multi_thread2()
     for (int tid = 0; tid < THREAD_COUNT; ++tid) {
         threads[tid].join();
     }
-    
+
     WARN("listener start close............\n");
     lis->async_close();
     listener_close.lock();
@@ -203,6 +203,7 @@ void test_rdma_echo_multi_thread2()
 }
 
 
-BEGIN_TESTS_DECLARATION(test_rdma_echo_multi_thread2)
-DECLARE_TEST(test_rdma_echo_multi_thread2)
+BEGIN_TESTS_DECLARATION(test_rdma_echo_multi_thread)
+                DECLARE_TEST(test_rdma_echo_multi_thread)
 END_TESTS_DECLARATION
+
