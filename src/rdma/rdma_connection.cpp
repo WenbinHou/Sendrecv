@@ -218,7 +218,7 @@ bool rdma_connection::async_connect()
     return true;
 }
 
-/*bool rdma_connection::async_close()
+bool rdma_connection::async_close()
 {
     bool need_release;
     if (!_rundown.try_acquire(&need_release)) {
@@ -234,9 +234,9 @@ bool rdma_connection::async_connect()
     }
     ((rdma_environment*)_environment)->push_and_trigger_notification(rdma_event_data::rdma_connection_close(this));
     return true;
-}*/
+}
 
-bool rdma_connection::async_close()
+/*bool rdma_connection::async_close()
 {
     bool need_release;
     if (!_rundown.try_acquire(&need_release)) {
@@ -248,6 +248,7 @@ bool rdma_connection::async_close()
 
     if (!_rundown.shutdown()) {
         _rundown.release();
+        ERROR("xxxxxxxxxxxxxxxxxxxxx\n");
         return false;
     }
 
@@ -289,7 +290,7 @@ bool rdma_connection::async_close()
     //if self_ready_close is false. and receive the ack_close ,cannot release
 
     return true;
-}
+}*/
 
 //assume the length is no more than 1G
 bool rdma_connection::async_send(const void* buffer, const size_t length)

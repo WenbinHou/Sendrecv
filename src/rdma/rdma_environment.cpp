@@ -265,9 +265,10 @@ void rdma_environment::process_close_queue(){
         bool issuc = _ready_close_queue.try_front(&conn_info);
         if(!issuc) break;
         else{
-            if(get_curtime() - (conn_info->time_ready_close) >= 2000){
-                if(conn_info->closing_conn->_status.load() == CONNECTION_CONNECTED)
-                    rdma_disconnect(conn_info->closing_conn->conn_id);
+            if(get_curtime() - (conn_info->time_ready_close) >= 2000000){
+                if(conn_info->closing_conn->_status.load() == CONNECTION_CONNECTED){
+                    //rdma_disconnect(conn_info->closing_conn->conn_id);
+                }
                 else{
                     ASSERT(conn_info->closing_conn->_status.load() == CONNECTION_CLOSED);
                 }

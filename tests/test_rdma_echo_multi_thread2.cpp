@@ -137,7 +137,7 @@ static void set_client_connection_callbacks(connection* client_conn, const int t
     };
 }
 
-void test_rdma_echo_multi_thread()
+void test_rdma_echo_multi_thread2()
 {
     for (size_t i = 0; i < ECHO_DATA_LENGTH; ++i) {
         dummy_data[i] = (char)(unsigned char)i;
@@ -203,7 +203,7 @@ void test_rdma_echo_multi_thread()
 }
 
 
-BEGIN_TESTS_DECLARATION(test_rdma_echo_multi_thread)
-                DECLARE_TEST(test_rdma_echo_multi_thread)
+BEGIN_TESTS_DECLARATION(test_rdma_echo_multi_thread2)
+DECLARE_TEST(test_rdma_echo_multi_thread2)
 END_TESTS_DECLARATION
 

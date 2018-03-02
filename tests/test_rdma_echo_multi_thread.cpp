@@ -10,7 +10,7 @@
 #define LOCAL_PORT          (8801)
 #define ECHO_DATA_LENGTH    ((size_t)1024 * 1024* 16)  // 16MB
 #define ECHO_DATA_ROUND     ((size_t)16)
-#define THREAD_COUNT        (32)
+#define THREAD_COUNT        (4)
 
 static char dummy_data[ECHO_DATA_LENGTH];
 
@@ -58,8 +58,10 @@ static void set_server_connection_callbacks(connection* server_conn)
         SUCC("[PassiveConnection] OnSend: %lld (total: %lld)\n", (long long)length, (long long)sent);
         if (sent == ECHO_DATA_LENGTH * ECHO_DATA_ROUND * THREAD_COUNT) {
             INFO("[PassiveConnection] All echo back data sent. (%lld)\n", sent);
+            int i = 0;
             for(connection* tmpconn:connection_list){
                 bool success = tmpconn->async_close();
+                DEBUG("i = %d\n", i++);
                 ASSERT(success);
             }
         }
@@ -136,7 +138,7 @@ static void set_client_connection_callbacks(connection* client_conn, const int t
     };
 }
 
-void test_rdma_echo_multi_thread2()
+void test_rdma_echo_multi_thread()
 {
     for (size_t i = 0; i < ECHO_DATA_LENGTH; ++i) {
         dummy_data[i] = (char)(unsigned char)i;
@@ -203,6 +205,6 @@ void test_rdma_echo_multi_thread2()
 }
 
 
-BEGIN_TESTS_DECLARATION(test_rdma_echo_multi_thread2)
-DECLARE_TEST(test_rdma_echo_multi_thread2)
+BEGIN_TESTS_DECLARATION(test_rdma_echo_multi_thread)
+DECLARE_TEST(test_rdma_echo_multi_thread)
 END_TESTS_DECLARATION
