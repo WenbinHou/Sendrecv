@@ -354,14 +354,13 @@ bool rdma_connection::async_send(const void* buffer, const size_t length)
         pending_list->total_length += reg_size;
 
 
+        ASSERT(mr);
         //add a 16bytes to record recv_buffer addrs and recv_size
         struct ibv_sge tmp = {(uintptr_t)cur_send, (uint32_t)reg_size, mr->lkey};
         pending_list->sge_list.push_back(tmp);
         pending_list->mr_list.push_back(mr);
-        //ERROR("----------------------------\n");
         //pending_list将其放入_sending_queue中
         _sending_queue.push(pending_list);
-        //ERROR("----------------------------\n");
         TRACE("push %ld sge with total_length %ld into queue.\n",pending_list->num_sge, pending_list->total_length );
         //judge the whether send is finish
 
