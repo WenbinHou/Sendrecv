@@ -31,3 +31,4 @@ set(SOURCE_FILES
 add_executable(Sendrecv ${SOURCE_FILES}  tests/driver.cpp)
 add_executable(pingpong_socket ${SOURCE_FILES} tests/pingpong_socket.cpp)
 add_executable(pingpong_rdma ${SOURCE_FILES} tests/pingpong_rdma.cpp)
+add_executable(pingpong_rdma_async_many ${SOURCE_FILES} tests/pingpong_rdma_async_many.cpp)

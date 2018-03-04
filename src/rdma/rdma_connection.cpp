@@ -873,6 +873,8 @@ bool rdma_connection::async_send_many(const std::vector<fragment> frags)
         ASSERT(need_release);
     }
 
+    size_t pre_queue_size = _sending_queue.size();
+
     int num = frags.size();int pushtime = 0;
     rdma_sge_list *pending_list = new rdma_sge_list();
     size_t left_size = MAX_SEND_LEN - pending_list->total_length;
@@ -959,8 +961,19 @@ bool rdma_connection::async_send_many(const std::vector<fragment> frags)
         _sending_queue.push(pending_list);
     }
 
+    size_t new_size = _sending_queue.size();
+    TRACE("[async_send_many] push %d sending data into _sending_queue(now_size:%ld)\n", pushtime, new_size);
 
-
+    if(peer_start_recv.load()){
+        if(pre_queue_size <= 0) {
+            ((rdma_environment*)_environment)->
+                    push_and_trigger_notification(rdma_event_data::rdma_async_send(this));
+            TRACE("[async_send_many] start_recv has ready.\n");
+        }
+    }
+    else{
+        TRACE("[async_send_many]start_recv has not ready.\n");
+    }
 
     return true;
 }
