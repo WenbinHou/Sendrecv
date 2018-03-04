@@ -45,7 +45,24 @@ void rdma_connection::register_rundown()
             for(auto mr_addr:sge_list->mr_list){
                 CCALL(ibv_dereg_mr(mr_addr));
             }
-            if(sge_list->end){
+
+            for(int i  = 0;i < sge_list->num_sge;++i){
+                rdma_sge_list::sge_info &element = sge_list->sge_info_list[i];
+                if(element.end){
+                    has_not_send += sge_list->sge_list[i].length;
+                    if(OnSendError){
+                        OnSendError(this, (void*)element.send_start, element.send_length,
+                                    element.send_length-has_not_send, error);
+                    }
+                    _rundown.release();
+                    has_not_send = 0;
+                }
+                else{
+                    has_not_send += sge_list->sge_list[i].length;
+                }
+            }
+
+            /*if(sge_list->end){
                 has_not_send += sge_list->total_length;
                 if(OnSendError){
                     OnSendError(this, (void*)sge_list->send_start, sge_list->send_length,
@@ -56,7 +73,7 @@ void rdma_connection::register_rundown()
             }
             else{
                 has_not_send += sge_list->total_length;
-            }
+            }*/
         }
 
         if (OnClose) {
@@ -64,7 +81,6 @@ void rdma_connection::register_rundown()
         }
         
         _close_finished = true;
-        //rdma_disconnect(conn_id);//error call function
         DEBUG("END ~~~ have already trigger the rundown's register_callback.\n");
     });
 }
@@ -326,16 +342,17 @@ bool rdma_connection::async_send(const void* buffer, const size_t length)
         else reg_size = cur_len;
         //此pending_list需要放置到wr_id上，用于在完成操作后，ibv_dereg_mr
         rdma_sge_list *pending_list = new rdma_sge_list();//rdma_sge_pool.pop();
-        //WARN("pendinglist:%lld\n", (uintptr_t)pending_list);
-        pending_list->send_start  = send_start;
-        pending_list->send_length = send_length;
+        rdma_sge_list::sge_info tmp_sge_info = {send_start, send_length, sent_len, false};
+        //pending_list->send_start  = send_start;
+        //pending_list->send_length = send_length;
+        //pending_list->has_sent_len = sent_len;
         //注册内存
         ASSERT(conn_pd);
 
         struct ibv_mr *mr = ibv_reg_mr(conn_pd, (void*)const_cast<char*>(cur_send), reg_size, IBV_ACCESS_LOCAL_WRITE);
         pending_list->num_sge++;
         pending_list->total_length += reg_size;
-        pending_list->has_sent_len = sent_len;
+
 
         //add a 16bytes to record recv_buffer addrs and recv_size
         struct ibv_sge tmp = {(uintptr_t)cur_send, (uint32_t)reg_size, mr->lkey};
@@ -349,17 +366,21 @@ bool rdma_connection::async_send(const void* buffer, const size_t length)
         //judge the whether send is finish
 
         if(cur_len < MAX_SEND_LEN) {
-            pending_list->end = true;
+            tmp_sge_info.end = true;
+            pending_list->sge_info_list.push_back(tmp_sge_info);
             break;
         }
         else{
             cur_len  -= MAX_SEND_LEN;
             if(cur_len == 0){
-                pending_list->end = true;
+                tmp_sge_info.end = true;
+                pending_list->sge_info_list.push_back(tmp_sge_info);
                 break;
             }
             cur_send += MAX_SEND_LEN;
             sent_len += MAX_SEND_LEN;
+            tmp_sge_info.end = false;
+            pending_list->sge_info_list.push_back(tmp_sge_info);
         }
 
     }
@@ -703,19 +724,32 @@ void rdma_connection::process_one_cqe(struct ibv_wc *wc) {
             case IBV_WC_RDMA_WRITE: {
                 rdma_sge_list* sge_list = (rdma_sge_list*)wc->wr_id;
                 ASSERT(sge_list);
-                if(sge_list->end){
+                //regard as sge_list has more than one sge
+                for(int i = 0; i < sge_list->num_sge;++i){
+                    if(sge_list->sge_info_list[i].end){
+                        TRACE("Have complete a buffer send with addr : %ld, sge_list->num_sge = %ld\n",
+                              (uintptr_t)sge_list->sge_info_list[i].send_start, sge_list->num_sge);
+                        if(OnSend){
+                            ASSERT(sge_list->sge_info_list[i].send_length);
+                            OnSend(this, sge_list->sge_info_list[i].send_start, sge_list->sge_info_list[i].send_length);
+                        }
+                        _rundown.release();
+                    }
+                }
+                /*if(sge_list->end){
                     TRACE("Have complete a buffer send with addr : %ld.\n",(uintptr_t)sge_list->send_start);
                     if(OnSend) {
                         ASSERT(sge_list->send_length);
                         OnSend(this, sge_list->send_start, sge_list->send_length);
                     }
                     _rundown.release();
-                }
+                }*/
                 //deregister mr
                 for(auto mr:sge_list->mr_list)
                     CCALL(ibv_dereg_mr(mr));
                 //sge_list->sge_list.clear();
                 //sge_list->mr_list.clear();
+                //sge_list->sge_info_list.clear();
                 delete sge_list;
                 //rdma_sge_pool.push(sge_list);
                 break;
@@ -734,13 +768,22 @@ void rdma_connection::process_one_cqe(struct ibv_wc *wc) {
         if(op == IBV_WC_RDMA_WRITE){
             rdma_sge_list* sge_list = (rdma_sge_list*)wc->wr_id;
             ASSERT(sge_list);
-            if(OnSendError){
+            for(rdma_sge_list::sge_info &element:sge_list->sge_info_list){
+                if(OnSendError){
+                    TRACE("happen a senderror when sending buffer %ld (error status : %s\n",
+                          (uintptr_t)element.send_start,ibv_wc_status_str(wc->status));
+                    const int error = errno;
+                    OnSendError(this, element.send_start, element.send_length, element.has_sent_len, error);
+                }
+                if(element.end) _rundown.release();
+            }
+            /*if(OnSendError){
                 TRACE("happen a senderror when sending buffer %ld (error status : %s\n",
                       (uintptr_t)sge_list->send_start, ibv_wc_status_str(wc->status));
                 const int error = errno;
                 OnSendError(this, sge_list->send_start, sge_list->send_length, sge_list->has_sent_len, error);
             }
-            if(sge_list->end) _rundown.release();
+            if(sge_list->end) _rundown.release();*/
         }
 
         //trigger Onhup?
@@ -809,6 +852,7 @@ bool rdma_connection::start_receive()
 
 bool rdma_connection::async_send_many(const std::vector<fragment> frags)
 {
-    //
+
+
     return true;
 }

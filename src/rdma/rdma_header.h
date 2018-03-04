@@ -93,17 +93,29 @@ typedef struct rdma_event_data
 //一个rdma_sge_list表示要一起rdma write的数据
 typedef struct rdma_sge_list
 {
+    typedef struct sge_info{
+        void*  send_start;
+        size_t send_length;
+        size_t has_sent_len;
+        bool   end;
+    }sge_info;
+    //record whether each sge_list is the end of send_buffer, the start_addr and send_length of send_buffer,
+    //and has_sent_len of the total send_buffer
+
     std::vector<struct ibv_sge> sge_list;
     size_t num_sge;
     size_t total_length;//所有待发送的数据的大小（不能超过2G）
     std::vector<struct ibv_mr*> mr_list;
-    bool   end;
+    std::vector<sge_info>  sge_info_list;
+
+
+    /*bool   end;
     void * send_start;
     size_t send_length;
     size_t has_sent_len;
+     */
 public:
-    rdma_sge_list(): num_sge(0), total_length(0), end(false),send_start(nullptr),
-                     send_length(0), has_sent_len(0) {}
+    rdma_sge_list(): num_sge(0), total_length(0) {}
 }rdma_sge_list;
 
 typedef struct close_conn_info{
