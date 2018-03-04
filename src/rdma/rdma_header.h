@@ -6,7 +6,7 @@
 #include <vector>
 #define TIMEOUT_IN_MS 500
 #define MAX_SEND_LEN 1073741824
-#define MAX_RECV_WR 10
+#define MAX_RECV_WR 5
 #define CQE_MIN_NUM (MAX_RECV_WR*4+1) 
 #define MAX_SGE_NUM 10
 #define ACK_NUM_LIMIT 10 //暂时设置为10

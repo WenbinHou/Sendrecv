@@ -72,7 +72,7 @@ void set_client()
             end_time = get_curtime();
             long long consume_time = end_time - start_time;
             NOTICE("[Client] consume time is %lld, speed %.lf  MBytes/sec\n",
-                   (long long)consume_time, (double)(echo_size * 2 * times)/consume_time*1000000 );
+                   (long long)consume_time, (double)(echo_size /1024/1024* 2 * times)/consume_time*1000000 );
             SUCC("[Client] have recv all the data ready to close.\n");
             bool success = conn->async_close();
             TEST_ASSERT(success);
@@ -111,13 +111,15 @@ void set_server()
             SUCC("[ServerConnection] OnClose\n");
             client_close.unlock();
         };
-        server_conn->OnHup = [&](connection*, const int error) {
+        server_conn->OnHup = [&](connection* conn, const int error) {
             if (error == 0) {
                 SUCC("[ServerConnection] OnHup: %d (%s)\n", error, strerror(error));
             }
             else {
                 ERROR("[ServerConnection] OnHup: %d (%s)\n", error, strerror(error));
             }
+            bool success = conn->async_close();
+            ASSERT(success);
         };
 
         server_conn->OnReceive = [&](connection* conn, const void* buffer, const size_t length) {
@@ -138,11 +140,11 @@ void set_server()
                 senttimes++;
                 SUCC("[*****ServerConnection*****] OnSend: %lld (%d round)\n", (long long)length, senttimes);
             }
-            if(senttimes == times) {
+            /*if(senttimes == times) {
                 NOTICE("[ServerConnection] ready to close.\n");
                 bool success = conn->async_close();
                 TEST_ASSERT(success);
-            }
+            }*/
         };
         server_conn->OnSendError = [&](connection*, const void* buffer, const size_t length, const size_t sent_length, const int error) {
             ERROR("[ServerConnection] OnSendError: %d (%s). all %lld, sent %lld\n", error, strerror(error), (long long)length, (long long)sent_length);
@@ -200,10 +202,10 @@ int main(int argc, char *argv[])
 
     char* tmp_buffer = (char*)malloc(1024);
     frags.push_back(fragment(tmp_buffer, 1024));
-
+    echo_size += 1024;
 
     for(int i = 1;i <= 3;i++){
-        size_t malloc_size = 1024*1024*i;
+        size_t malloc_size = 1024LL*1024*1024*i;
         tmp_buffer = (char*)malloc(malloc_size);
         frags.push_back(fragment(tmp_buffer, malloc_size));
         echo_size += malloc_size;

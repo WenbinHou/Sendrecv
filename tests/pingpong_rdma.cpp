@@ -104,13 +104,15 @@ void set_server()
             SUCC("[ServerConnection] OnClose\n");
             client_close.unlock();
         };
-        server_conn->OnHup = [&](connection*, const int error) {
+        server_conn->OnHup = [&](connection* conn, const int error) {
             if (error == 0) {
                 SUCC("[ServerConnection] OnHup: %d (%s)\n", error, strerror(error));
             }
             else {
                 ERROR("[ServerConnection] OnHup: %d (%s)\n", error, strerror(error));
             }
+            bool success = conn->async_close();
+            TEST_ASSERT(success);
         };
 
         server_conn->OnReceive = [&](connection* conn, const void* buffer, const size_t length) {
@@ -128,11 +130,11 @@ void set_server()
             ASSERT(length == datasize);
             senttimes++;
             SUCC("[ServerConnection] OnSend: %lld (%d round)\n", (long long)length, senttimes);
-            if(senttimes == times) {
+            /*if(senttimes == times) {
                 NOTICE("[ServerConnection] ready to close.\n");
                 bool success = conn->async_close();
                 TEST_ASSERT(success);
-            }
+            }*/
         };
         server_conn->OnSendError = [&](connection*, const void* buffer, const size_t length, const size_t sent_length, const int error) {
             ERROR("[ServerConnection] OnSendError: %d (%s). all %lld, sent %lld\n", error, strerror(error), (long long)length, (long long)sent_length);

@@ -927,8 +927,9 @@ bool rdma_connection::async_send_many(const std::vector<fragment> frags)
 
                 cur_send += left_size;
                 left_frag_len -= left_size;
-                left_size = 0;
                 sent_len += left_size;
+                left_size = 0;
+                ERROR("%lld\n", (long long)sent_len);
                 break;
             }
         }
@@ -937,24 +938,25 @@ bool rdma_connection::async_send_many(const std::vector<fragment> frags)
             pushtime++;
             DEBUG("[async_send_many] push %d time: num_sge=%d, total_length=%lld.\n",
                   pushtime, (int)pending_list->num_sge, (long long)pending_list->total_length);
-            for(int k = 0;k <= pending_list->num_sge;++k){
+            for(int k = 0;k < pending_list->num_sge;++k){
                 DEBUG("[detail_sge %d]: sge_len = %lld, has_sent_len = %lld, is_end = %d\n",k,
-                      (long long)pending_list->sge_info_list[k].send_length,
+                      (long long)pending_list->sge_list[k].length,
                       (long long)pending_list->sge_info_list[k].has_sent_len,
                       (int)pending_list->sge_info_list[k].end);
             }
             _sending_queue.push(pending_list);
+            DEBUG("sent_len:%lld\n", (long long)sent_len);
             pending_list = new rdma_sge_list();
             left_size = MAX_SEND_LEN - pending_list->total_length;
         }
     }
     if(left_size != 0){
         pushtime++;
-        DEBUG("[async_send_many] push %d time: num_sge=%d, total_length=%lld.\n",
+        DEBUG("[async_send_many != 0] push %d time: num_sge=%d, total_length=%lld.\n",
               pushtime, (int)pending_list->num_sge, (long long)pending_list->total_length);
-        for(int k = 0;k <= pending_list->num_sge;++k){
+        for(int k = 0;k < pending_list->num_sge;++k){
             DEBUG("[detail_sge %d]: sge_len = %lld, has_sent_len = %lld, is_end = %d\n",k,
-                  (long long)pending_list->sge_info_list[k].send_length,
+                  (long long)pending_list->sge_list[k].length,
                   (long long)pending_list->sge_info_list[k].has_sent_len,
                   (int)pending_list->sge_info_list[k].end);
         }

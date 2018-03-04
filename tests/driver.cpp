@@ -13,9 +13,9 @@ int main(int argc, char** argv)
     /*the test of rdma*/
     //RUN_TEST(test_rdma_connection);//success
     //RUN_TEST(test_rdma_connections);//success
-    RUN_TEST(test_rdma_echo_simple);//success
-    RUN_TEST(test_rdma_echo_many_round);//success
+    //RUN_TEST(test_rdma_echo_simple);//success
+    //RUN_TEST(test_rdma_echo_many_round);//success
     RUN_TEST(test_rdma_echo_multi_thread);//success
-    RUN_TEST(test_rdma_echo_multi_thread2);//success
+    //RUN_TEST(test_rdma_echo_multi_thread2);//success
     return 0;
 }
