@@ -10,7 +10,7 @@ static char ip[16];
 static size_t datasize;
 static size_t size_MB;
 static int times, senttimes = 0, recvtimes = 0;
-static char* buffer;
+//static char* buffer;
 
 static std::mutex client_close;
 static std::mutex listener_close;
@@ -24,6 +24,7 @@ long long get_curtime(){
 static long long start_time, end_time;
 void set_client()
 {
+    char *client_buffer = (char*)malloc(datasize);
     client_close.lock();
     rdma_environment env;
 
@@ -44,7 +45,7 @@ void set_client()
         SUCC("[Client] OnConnect\n");
         conn->start_receive();
         start_time = get_curtime();
-        bool success = conn->async_send(buffer, datasize);
+        bool success = conn->async_send(client_buffer, datasize);
         TEST_ASSERT(success);
     };
     client_conn->OnConnectError = [&](connection*, const int error) {
@@ -59,7 +60,7 @@ void set_client()
             client_receive_bytes = 0;
             SUCC("[Client] receive %d round .\n", recvtimes);
             if(recvtimes < times){
-                bool success = conn->async_send(buffer, datasize);
+                bool success = conn->async_send(client_buffer, datasize);
                 TEST_ASSERT(success);
             }
         }
@@ -91,6 +92,7 @@ void set_client()
 
 void set_server()
 {
+    char *server_buffer = (char*)malloc(datasize);
     client_close.lock();
     listener_close.lock();
     rdma_environment env;
@@ -118,7 +120,7 @@ void set_server()
                 server_receive_bytes = 0;
                 recvtimes++;
                 SUCC("[ServerConnection] recv times %d ready to send data to client.\n", recvtimes);
-                bool success = conn->async_send(buffer, datasize);
+                bool success = conn->async_send(server_buffer, datasize);
                 TEST_ASSERT(success);
             }
         };
@@ -190,8 +192,6 @@ int main(int argc, char *argv[])
     SUCC("isclient = %lld, ip = %s, num of bytes = %lld, send times = %lld.\n",
          (long long)is_client, ip, (long long)datasize, (long long)times);
 
-    buffer = (char*)malloc(datasize);
-    memset(buffer, 0, datasize);
     if(is_client){
         NOTICE("Start client......\n");
         set_client();
