@@ -852,6 +852,115 @@ bool rdma_connection::start_receive()
 
 bool rdma_connection::async_send_many(const std::vector<fragment> frags)
 {
+    ASSERT(!frags.empty());
+#ifndef NDEBUG
+    for (const fragment& frag : frags) {
+        ASSERT(frag.original_buffer() != nullptr);
+        ASSERT(frag.original_length() != 0);
+    }
+#endif
+    bool need_release;
+    if (!_rundown.try_acquire(&need_release)) {
+        if (need_release) {
+            _rundown.release();
+        }
+        return false;
+    }
+
+    // Increase _rundown count as if we call async_send() so many times
+    for (size_t i = 0; i < frags.size() - 1; ++i) {
+        bool success = _rundown.try_acquire(&need_release);
+        ASSERT(success);
+        ASSERT(need_release);
+    }
+
+    int num = frags.size();int pushtime = 0;
+    rdma_sge_list *pending_list = new rdma_sge_list();
+    size_t left_size = MAX_SEND_LEN - pending_list->total_length;
+    DEBUG("Initial left_size = %lld\n", (long long)left_size);
+    int i = 0;
+    size_t left_frag_len = frags[i].original_length();
+    char* cur_send = (char*)const_cast<void*>(frags[i].original_buffer());
+    void* send_start = const_cast<void*>(frags[i].original_buffer());
+    size_t send_length = frags[i].original_length();
+    size_t sent_len = 0;
+
+
+    for(;i < num;){
+        while(left_size > 0){
+            if(left_frag_len <= left_size){
+                rdma_sge_list::sge_info tmp_sge_info = {send_start, send_length, sent_len, true};
+                struct ibv_mr *mr = ibv_reg_mr(conn_pd, (void*)(cur_send), left_frag_len, IBV_ACCESS_LOCAL_WRITE);
+                ASSERT(mr);
+                pending_list->num_sge++;
+                pending_list->total_length += left_frag_len;
+
+                struct ibv_sge tmp = {(uintptr_t)cur_send, (uint32_t)left_frag_len, mr->lkey};
+                pending_list->sge_list.push_back(tmp);
+                pending_list->mr_list.push_back(mr);
+                pending_list->sge_info_list.push_back(tmp_sge_info);
+
+                left_size -= left_frag_len;
+
+                i++;
+                if(i < num){
+                    left_frag_len = frags[i].original_length();
+                    cur_send = (char*)const_cast<void*>(frags[i].original_buffer());
+                    send_start = const_cast<void*>(frags[i].original_buffer());
+                    send_length = frags[i].original_length();
+                    sent_len = 0;
+                }
+                break;
+            }
+            else{
+                rdma_sge_list::sge_info tmp_sge_info = {send_start, send_length, sent_len, false};
+                struct ibv_mr *mr = ibv_reg_mr(conn_pd, (void*)(cur_send), left_size, IBV_ACCESS_LOCAL_WRITE);
+                ASSERT(mr);
+                pending_list->num_sge++;
+                pending_list->total_length += left_size;
+
+                struct ibv_sge tmp = {(uintptr_t)cur_send, (uint32_t)left_size, mr->lkey};
+                pending_list->sge_list.push_back(tmp);
+                pending_list->mr_list.push_back(mr);
+                pending_list->sge_info_list.push_back(tmp_sge_info);
+
+                cur_send += left_size;
+                left_frag_len -= left_size;
+                left_size = 0;
+                sent_len += left_size;
+                break;
+            }
+        }
+
+        if(left_size == 0){
+            pushtime++;
+            DEBUG("[async_send_many] push %d time: num_sge=%d, total_length=%lld.\n",
+                  pushtime, (int)pending_list->num_sge, (long long)pending_list->total_length);
+            for(int k = 0;k <= pending_list->num_sge;++k){
+                DEBUG("[detail_sge %d]: sge_len = %lld, has_sent_len = %lld, is_end = %d\n",k,
+                      (long long)pending_list->sge_info_list[k].send_length,
+                      (long long)pending_list->sge_info_list[k].has_sent_len,
+                      (int)pending_list->sge_info_list[k].end);
+            }
+            _sending_queue.push(pending_list);
+            pending_list = new rdma_sge_list();
+            left_size = MAX_SEND_LEN - pending_list->total_length;
+        }
+    }
+    if(left_size != 0){
+        pushtime++;
+        DEBUG("[async_send_many] push %d time: num_sge=%d, total_length=%lld.\n",
+              pushtime, (int)pending_list->num_sge, (long long)pending_list->total_length);
+        for(int k = 0;k <= pending_list->num_sge;++k){
+            DEBUG("[detail_sge %d]: sge_len = %lld, has_sent_len = %lld, is_end = %d\n",k,
+                  (long long)pending_list->sge_info_list[k].send_length,
+                  (long long)pending_list->sge_info_list[k].has_sent_len,
+                  (int)pending_list->sge_info_list[k].end);
+        }
+        _sending_queue.push(pending_list);
+    }
+
+
 
 
     return true;
