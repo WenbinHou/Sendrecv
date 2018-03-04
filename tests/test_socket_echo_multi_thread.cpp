@@ -3,10 +3,10 @@
 #include <sendrecv.h>
 #include <mutex>
 
-#define LOCAL_HOST          ("127.0.0.1")
+#define LOCAL_HOST          ("192.168.4.28")
 #define LOCAL_PORT          (8801)
 #define ECHO_DATA_LENGTH    ((size_t)1024 * 1024 * 16)  // 16MB
-#define ECHO_DATA_ROUND     ((size_t)16)
+#define ECHO_DATA_ROUND     ((size_t)256)
 #define THREAD_COUNT        (8)
 
 static char dummy_data[ECHO_DATA_LENGTH];

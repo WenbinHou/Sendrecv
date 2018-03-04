@@ -17,14 +17,17 @@ link_libraries(Threads::Threads ibverbs rdmacm)
 
 # Include all header files under src/common/
 file(GLOB COMMON_FILES "src/common/*.cpp" "src/common/*.h" "src/common/*.hpp")
-file(GLOB TESTS_FILES "tests/*.cpp" "tests/*.h" "tests/*.hpp")
+file(GLOB TESTS_FILES "tests/test_*.cpp" "tests/*.h" "tests/*.hpp")
 file(GLOB SRC_FILES "src/*.cpp" "src/*.h" "src/*.hpp" "src/rdma/*.cpp" "src/rdma/*.h" "src/rdma/*.hpp")
-#file(GLOB SRC_FILES "src/*.cpp" "src/*.h" "src/*.hpp")
+#file(GLOB PINGPONG "tests/pingpong_socket.cpp" "tests/*.h")
+
+
 
 set(SOURCE_FILES
     ${COMMON_FILES}
     ${TESTS_FILES}
-    ${SRC_FILES}
-        tests/test_rdma_echo_multi_thread2.cpp)
+    ${SRC_FILES})
 
-add_executable(Sendrecv ${SOURCE_FILES})
+add_executable(Sendrecv ${SOURCE_FILES}  tests/driver.cpp)
+add_executable(pingpong_socket ${SOURCE_FILES} tests/pingpong_socket.cpp)
+add_executable(pingpong_rdma ${SOURCE_FILES} tests/pingpong_rdma.cpp)

@@ -79,7 +79,6 @@ void rdma_environment::process_rdma_channel(const uint32_t events)
     struct rdma_cm_event *event = nullptr;
     struct rdma_conn_param cm_params;
     build_params(&cm_params);
-
     while(rdma_get_cm_event(env_ec, &event) == 0){
         struct rdma_cm_event event_copy;
         memcpy(&event_copy, event, sizeof(*event));
@@ -181,7 +180,7 @@ void rdma_environment::process_rdma_channel(const uint32_t events)
             }
         }
     }
-   return;
+    return;
 }
 
 void rdma_environment::main_loop()
@@ -265,8 +264,12 @@ void rdma_environment::process_close_queue(){
         bool issuc = _ready_close_queue.try_front(&conn_info);
         if(!issuc) break;
         else{
-            if(get_curtime() - (conn_info->time_ready_close) >= 2000000){
+            if(get_curtime() - (conn_info->time_ready_close) >= 0){
                 if(conn_info->closing_conn->_status.load() == CONNECTION_CONNECTED){
+                    WARN("ready to rdma_disconnection.\n");
+                    conn_info->closing_conn->close_rdma_conn();
+                    //rdma_destroy_qp(conn_info->closing_conn->conn_id);
+                    //conn_info->closing_conn->conn_id = nullptr;
                     //rdma_disconnect(conn_info->closing_conn->conn_id);
                 }
                 else{

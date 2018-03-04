@@ -10,7 +10,7 @@
 #define LOCAL_PORT          (8801)
 #define ECHO_DATA_LENGTH    ((size_t)1024 * 1024* 16)  // 16MB
 #define ECHO_DATA_ROUND     ((size_t)16)
-#define THREAD_COUNT        (4)
+#define THREAD_COUNT        (8)
 
 static char dummy_data[ECHO_DATA_LENGTH];
 
@@ -35,7 +35,7 @@ static void set_server_connection_callbacks(connection* server_conn)
     };
     server_conn->OnHup = [&](connection* conn, const int error) {
         ERROR("[PassiveConnection] OnHup: %d (%s)\n", error, strerror(error));
-        conn->async_close();
+        //conn->async_close();
     };
     server_conn->OnReceive = [&](connection* conn, const void* buffer, const size_t length) {
         const long long recvd = (server_receive_bytes += length);
@@ -199,7 +199,7 @@ void test_rdma_echo_multi_thread()
     server_all_close.lock();
     WARN("server_alive_connection = %d\n", server_alive_connections.load());
     //ASSERT(server_alive_connections == 0);
-    usleep(1000);
+    //usleep(20000);
     env.dispose();
 
 }

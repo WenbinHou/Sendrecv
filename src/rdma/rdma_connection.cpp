@@ -77,7 +77,7 @@ long long rdma_connection::get_curtime(){
 void rdma_connection::close_rdma_conn()
 {
     //may have error
-    if(conn_cq){
+    /*if(conn_cq){
         if(ack_num != 0)
             ibv_ack_cq_events(conn_cq, ack_num);
         CCALL(ibv_destroy_cq(conn_cq));
@@ -94,7 +94,7 @@ void rdma_connection::close_rdma_conn()
     ASSERT_RESULT(conn_id);ASSERT(conn_qp);
     rdma_destroy_qp(conn_id);conn_qp = nullptr;
     CCALL(rdma_destroy_id(conn_id));
-    conn_id = nullptr;
+    conn_id = nullptr;*/
 }
 
 void rdma_connection::build_qp_attr(struct ibv_qp_init_attr *qp_attr)
@@ -218,7 +218,7 @@ bool rdma_connection::async_connect()
     return true;
 }
 
-bool rdma_connection::async_close()
+/*bool rdma_connection::async_close()
 {
     bool need_release;
     if (!_rundown.try_acquire(&need_release)) {
@@ -234,9 +234,9 @@ bool rdma_connection::async_close()
     }
     ((rdma_environment*)_environment)->push_and_trigger_notification(rdma_event_data::rdma_connection_close(this));
     return true;
-}
+}*/
 
-/*bool rdma_connection::async_close()
+bool rdma_connection::async_close()
 {
     bool need_release;
     if (!_rundown.try_acquire(&need_release)) {
@@ -285,12 +285,10 @@ bool rdma_connection::async_close()
         //wait for the IBV_WC_SEND and IBV_WC_RECV
     }
 
-    //_rundown.release();
-    //!!!!!remember _rundown.release() when receive the ack_close && self_ready_close is true
-    //if self_ready_close is false. and receive the ack_close ,cannot release
-
+    //!!!!!remember _rundown.release() when receive the ack_close && self_ready_closed is true
+    //if self_ready_closed is false. and receive the ack_close ,cannot release
     return true;
-}*/
+}
 
 //assume the length is no more than 1G
 bool rdma_connection::async_send(const void* buffer, const size_t length)
@@ -624,7 +622,7 @@ void rdma_connection::process_one_cqe(struct ibv_wc *wc) {
                     peer_ready_closed.store(true);
                     if(!self_ready_close.load()){
                         //trigger Onhup
-                        const int error = errno;
+                        const int error = 0;
                         if(OnHup)
                             OnHup(this, error);
                     }
@@ -673,14 +671,15 @@ void rdma_connection::process_one_cqe(struct ibv_wc *wc) {
             }
             case IBV_WC_SEND: {
                 //!!!!! whether is close
-
                 addr_mr* send_addr_mr = (addr_mr*) wc->wr_id;
                 ASSERT(send_addr_mr);
                 message* msg_addr = send_addr_mr->msg_addr;
                 TRACE("Have complete a msg send with addr : %ld, type = %d\n", (uintptr_t)msg_addr, msg_addr->type);
                 if(msg_addr->type == message::ACK_CLOSE){
+                    DEBUG("The ack_close message have already send.\n");
                     self_ready_closed.store(true);
                     if(peer_ready_closed.load()){
+                        WARN("xxxxxxxxxxxxxxxxx\n");
                         //push to close queue
                         ((rdma_environment*)_environment)->_ready_close_queue.
                                 push(close_conn_info(get_curtime(), this));

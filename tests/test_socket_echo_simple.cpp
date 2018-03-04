@@ -7,7 +7,7 @@
 
 #define LOCAL_HOST          ("127.0.0.1")
 #define LOCAL_PORT          (8801)
-#define ECHO_DATA_LENGTH    (1024 * 1024 * 8)  // 8MB
+#define ECHO_DATA_LENGTH    (1024 * 1024 * 32)  // 8MB
 
 static char dummy_data[ECHO_DATA_LENGTH];
 

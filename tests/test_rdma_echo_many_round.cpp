@@ -5,8 +5,8 @@
 
 #define LOCAL_HOST          ("192.168.14.28")
 #define LOCAL_PORT          (8801)
-#define ECHO_DATA_LENGTH    ((size_t)1024*1024*16)  // 16MB
-#define ECHO_DATA_ROUND     ((size_t)32)
+#define ECHO_DATA_LENGTH    ((size_t)1024*1024*4)  // 16MB
+#define ECHO_DATA_ROUND     ((size_t)1000)
 
 static char dummy_data[ECHO_DATA_LENGTH];
 

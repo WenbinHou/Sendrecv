@@ -8,9 +8,9 @@
 
 #define LOCAL_HOST          ("192.168.14.28")
 #define LOCAL_PORT          (8801)
-#define ECHO_DATA_LENGTH    ((size_t)1024 * 1024* 16)  // 16MB
+#define ECHO_DATA_LENGTH    ((size_t)1024 * 1024* 256)  // 16MB
 #define ECHO_DATA_ROUND     ((size_t)16)
-#define THREAD_COUNT        (32)
+#define THREAD_COUNT        (8)
 
 static char dummy_data[ECHO_DATA_LENGTH];
 
@@ -34,10 +34,10 @@ static void set_server_connection_callbacks(connection* server_conn)
     };
     server_conn->OnHup = [&](connection* conn, const int error) {
         if (error == 0) {
-            SUCC("[ServerConnection] OnHup: %d (%s)\n", error, strerror(error));
+            SUCC("[PassiveConnection] OnHup: %d (%s)\n", error, strerror(error));
         }
         else {
-            ERROR("[ServerConnection] OnHup: %d (%s)\n", error, strerror(error));
+            ERROR("[PassiveConnection] OnHup: %d (%s)\n", error, strerror(error));
             TEST_FAIL();
         }
         conn->async_close();
@@ -48,12 +48,10 @@ static void set_server_connection_callbacks(connection* server_conn)
         if (recvd == ECHO_DATA_LENGTH * ECHO_DATA_ROUND * THREAD_COUNT) {
             INFO("[PassiveConnection] All echo data received. (%lld)\n", recvd);
         }
-
         void* tmp_buf = malloc(length + sizeof(TRADEMARK));
         TEST_ASSERT(tmp_buf != nullptr);
         *(std::remove_const<decltype(TRADEMARK)>::type*)tmp_buf = TRADEMARK;
         memcpy((char*)tmp_buf + sizeof(TRADEMARK), buffer, length);
-
         bool success = conn->async_send((char*)tmp_buf + sizeof(TRADEMARK), length);
         TEST_ASSERT(success);
     };
@@ -196,8 +194,8 @@ void test_rdma_echo_multi_thread2()
     WARN("server_all_close waiting..........\n");
     server_all_close.lock();
     WARN("server_alive_connection = %d\n", server_alive_connections.load());
-    //ASSERT(server_alive_connections == 0);
-    usleep(1000);
+    ASSERT(server_alive_connections == 0);
+    //usleep(20000000);
     env.dispose();
 
 }
