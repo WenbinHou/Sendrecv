@@ -19,6 +19,10 @@ public:
     bool async_send_many(const std::vector<fragment> frags) override; //
     endpoint remote_endpoint() const { return _remote_endpoint; };
     endpoint local_endpoint() const { return _local_endpoint; };
+    
+    enum connection_status get_conn_status(){
+        return _status.load();
+    }
 private:
     void register_rundown();
     void build_conn_res();

@@ -264,10 +264,13 @@ bool rdma_connection::async_close()
 
     if (!_rundown.shutdown()) {
         _rundown.release();
-        ERROR("xxxxxxxxxxxxxxxxxxxxx\n");
         return false;
     }
-
+    if(_status.load() == CONNECTION_CONNECT_FAILED){
+        ((rdma_environment*)_environment)->push_and_trigger_notification(rdma_event_data::rdma_fail_connection_close(this));
+        return true;
+    }
+    ASSERT(_status.load() == CONNECTION_CONNECTED);
     self_ready_close.store(true);
     addr_mr *addr_mr_pair = addr_mr_pool.pop();
     message *ctl_msg      = ctl_msg_pool.pop();
@@ -802,7 +805,7 @@ void rdma_connection::process_one_cqe(struct ibv_wc *wc) {
             }
             //FATAL("The program may has bug.or the You need to review your code(status:%s).\n",  ibv_wc_status_str(wc->status));
 
-            ASSERT(0);
+            //ASSERT(0);
         }
     }
 }

@@ -29,9 +29,10 @@ void set_client()
     rdma_environment env;
 
     rdma_connection * client_conn = env.create_rdma_connection(ip, LISTEN_PORT);
-    client_conn->OnClose = [&](connection*) {
+    client_conn->OnClose = [&client_close](connection* conn) {
         SUCC("[Client] OnClose.\n");
-        client_close.unlock();
+        if(conn->get_conn_status() != CONNECTION_CONNECT_FAILED)
+            client_close.unlock();
     };
     client_conn->OnHup = [&](connection*, const int error) {
         if (error == 0) {
@@ -48,9 +49,19 @@ void set_client()
         bool success = conn->async_send(client_buffer, datasize);
         TEST_ASSERT(success);
     };
-    client_conn->OnConnectError = [&](connection*, const int error) {
-        ERROR("[Client] OnConnectError: %d (%s)\n", error, strerror(error));
-        TEST_FAIL();
+    client_conn->OnConnectError = [&](connection* conn, const int error) {
+        ERROR("[Client] OnConnectError: %d (%s) try again\n", error, strerror(error));
+        conn->async_close();
+        sleep(1);
+        rdma_connection * newconn = env.create_rdma_connection(ip, LISTEN_PORT);
+        newconn->OnConnectError = conn->OnConnectError;
+        newconn->OnConnect = conn->OnConnect;
+        newconn->OnHup = conn->OnHup;
+        newconn->OnClose = conn->OnClose;
+        newconn->OnReceive = conn->OnReceive;
+        newconn->OnSend = conn->OnSend;
+        newconn->OnSendError = conn->OnSendError;
+        ASSERT(newconn->async_connect());
     };
     client_conn->OnReceive = [&](connection* conn, const void* buffer, const size_t length) {
         client_receive_bytes += length;

@@ -31,6 +31,8 @@ public:
     virtual bool async_connect() = 0;
     virtual bool start_receive() = 0;
 
+    virtual enum connection_status get_conn_status() = 0;
+
 protected:
     explicit connection(environment* env);
 
@@ -65,7 +67,10 @@ public:
 
     endpoint remote_endpoint() const { return _remote_endpoint; }
     endpoint local_endpoint() const { return _local_endpoint; }
-
+    
+    enum connection_status get_conn_status(){
+        return _status.load();
+    }
 private:
     volatile bool _close_finished = false;
     rundown_protection _rundown;
