@@ -232,7 +232,6 @@ void socket_connection::do_send()
             }
 
             if (OnSendError) {
-                ERROR("xxxxxxxxxxxxxxxxxxxxxxxxxxx\n");
                 OnSendError(this, (void*)frag->original_buffer(), frag->original_length(), frag->original_length() - frag->curr_length(), error);
             }
             _sending_queue.pop();

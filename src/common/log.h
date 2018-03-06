@@ -29,3 +29,6 @@
 #define SUCC(__format, ...)     __LOGGER_OUTPUT("SUCC",   "32;1", __format, ##__VA_ARGS__)
 #define ERROR(__format, ...)    __LOGGER_OUTPUT("ERROR",  "31;1", __format, ##__VA_ARGS__)
 #define FATAL(__format, ...)    __LOGGER_OUTPUT("FATAL",  "31;1", __format, ##__VA_ARGS__)
+
+#define IDEBUG(__format, ...)    __LOGGER_OUTPUT("DEBUG",  "36;1", __format, ##__VA_ARGS__)
+#define ITRACE(__format, ...)    __LOGGER_OUTPUT("DEBUG",  "34e;1", __format, ##__VA_ARGS__)
