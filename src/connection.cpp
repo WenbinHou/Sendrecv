@@ -86,6 +86,7 @@ void socket_connection::init(const bool isAccepted)
         _conn_fd = INVALID_FD;
 
         _close_finished = true;
+        //delete this;
     });
 }
 

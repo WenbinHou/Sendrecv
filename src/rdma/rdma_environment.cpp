@@ -306,6 +306,12 @@ void rdma_environment::process_epoll_env_notificaton_event_rdmafd(const uint32_t
                 this->process_close_queue();
                 break;
             }
+            case rdma_event_data::RDMA_EVENTTYPE_FAILED_CONNECTION_CLOSE:{
+                WARN("ready to close failed_connected connectioni......\n");
+                rdma_connection* conn = (rdma_connection*)evdata.owner;
+                conn->close_rdma_conn();
+                conn->_rundown.release();
+            }
             case rdma_event_data::RDMA_EVENTTYPE_LISTENER_CLOSE:{
                 rdma_listener* lis = (rdma_listener*)evdata.owner;
                 lis->_rundown.release();

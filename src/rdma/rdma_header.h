@@ -56,6 +56,7 @@ typedef struct rdma_event_data
         RDMA_EVENTTYPE_ASYNC_SEND,
         RDMA_EVENTTYPE_ENVIRONMENT_DISPOSE,
         RDMA_EVENTTYPE_CONNECTION_CLOSE,
+        RDMA_EVENTTYPE_FAILED_CONNECTION_CLOSE,
         RDMA_EVENTTYPE_CONNECTION_CONNECT_FAILED,
         RDMA_EVENTTYPE_CONNECTION_RUNDOWN_RELEASE,
         RDMA_EVENTTYPE_LISTENER_CLOSE,
@@ -71,8 +72,8 @@ typedef struct rdma_event_data
     static rdma_event_data rdma_environment_dispose(environment* env) {
         return rdma_event_data{ RDMA_EVENTTYPE_ENVIRONMENT_DISPOSE, env };
     }
-    static rdma_event_data rdma_connection_close(connection* conn) {
-        return rdma_event_data{ RDMA_EVENTTYPE_CONNECTION_CLOSE, conn};
+    static rdma_event_data rdma_fail_connection_close(connection* conn) {
+        return rdma_event_data{ RDMA_EVENTTYPE_FAILED_CONNECTION_CLOSE, conn};
     }
     static rdma_event_data rdma_connection_close() {
         return rdma_event_data{ RDMA_EVENTTYPE_CONNECTION_CLOSE, nullptr};
