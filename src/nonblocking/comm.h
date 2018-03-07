@@ -3,6 +3,8 @@
 
 #define BASE_PORT 8800
 #include <vector>
+#include <mutex>
+#include <condition_variable>
 #include "utils.h"
 #include "sendrecv.h"
 
@@ -14,9 +16,10 @@ public:
     ~comm() = default;
 
 private:
-    int rank;
-    int size;
-    int my_listen_port;
+    int  rank;
+    int  size;
+    char my_listen_ip[16];//current only for ipv4
+    int  my_listen_port;
     std::vector<nodeinfo> nodelist;
     std::vector<connection*> send_conn_list;
     std::vector<connection*> recv_conn_list;
@@ -26,12 +29,24 @@ private:
     socket_listener *lis;
 
     pool<datahead> datahead_pool;//used for get space for the head of send data
+
+    int has_conn_num;
+    std::mutex mtx;
+    std::condition_variable cv;
+
+    int close_conn_num;
 public:
     comm();
-    bool init(int rank, int size, vector<nodeinfo> &nodelist);
-    bool isend(int dest, const void *buf, size_t count, send_handler *req);
-    bool irecv(int src,  void *buf, size_t count, recv_handler *req);
+    bool init(int rank, int size, std::vector<nodeinfo> &nodelist);
+    bool isend(int dest, const void *buf, size_t count, handler *req);
+    //handler or send_handler
+    bool irecv(int src,  void *buf, size_t count, handler *req);
+    //handler or recv_handler
     bool wait(handler *req);
+    bool finalize();
+
+    int get_size() {return size;}
+    int get_rank() {return rank;}
 
 private:
     void set_send_connection_callback(int conn_rank, connection * conn);

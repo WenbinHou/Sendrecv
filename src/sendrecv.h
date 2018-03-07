@@ -8,6 +8,7 @@ class socket_connection;
 class socket_listener;
 class socket_listener;
 #include <common/common.h>
+#include <sys/eventfd.h>
 
 #define INVALID_FD      ((int)-1)
 
@@ -105,6 +106,60 @@ public:
 };
 
 
+enum head_type{
+    HEAD_TYPE_INVAILD = 0,
+    HEAD_TYPE_INIT,
+    HEAD_TYPE_SEND,
+    HEAD_TYPE_FINALIZE,
+};
+
+typedef struct datahead{
+    enum head_type type;
+    size_t content_size;
+    int src;
+    int dest;
+public:
+    datahead(){}
+    datahead(enum head_type type, size_t size)
+            :type(type), content_size(size){}
+}datahead;
+
+struct data_state{
+    size_t      recvd_head_size;
+    datahead    head_msg;
+    size_t      total_content_size;
+    size_t      recvd_content_size;
+    char*       content;
+public:
+    data_state()
+            :recvd_head_size(0), head_msg(), total_content_size(0), recvd_content_size(0),content(nullptr) {}
+    void clear(){
+        recvd_head_size = 0;
+        memset(&head_msg, 0, sizeof(datahead));
+        total_content_size = 0;
+        recvd_content_size = 0;
+        content = nullptr;
+    }
+
+};
+
+typedef struct handler{
+    size_t content_size;
+    char*  content;
+    int    src;
+    int    dest;
+    int    notify_fd;
+    bool   is_finish;
+public:
+    handler():content_size(0), content(nullptr), src(-1), dest(-1), is_finish(false){
+        notify_fd = CCALL(eventfd(0, EFD_CLOEXEC));
+        IDEBUG("Create a handler with notify_fd = %d\n", notify_fd);
+    }
+    void set_handler(int s,  int d, size_t cs, char* c) {
+        src = s; dest = d; content_size = cs; content = c;
+        is_finish = false;
+    }
+}handler;
 #include "environment.h"
 #include "connection.h"
 #include "listener.h"

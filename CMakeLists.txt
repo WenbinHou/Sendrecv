@@ -19,6 +19,7 @@ link_libraries(Threads::Threads ibverbs rdmacm)
 file(GLOB COMMON_FILES "src/common/*.cpp" "src/common/*.h" "src/common/*.hpp")
 file(GLOB TESTS_FILES "tests/test_*.cpp" "tests/*.h" "tests/*.hpp")
 file(GLOB SRC_FILES "src/*.cpp" "src/*.h" "src/*.hpp" "src/rdma/*.cpp" "src/rdma/*.h" "src/rdma/*.hpp")
+file(GLOB NONBLOCK_FILES "src/nonblocking/*.cpp" "src/nonblocking/*.h")
 #file(GLOB PINGPONG "tests/pingpong_socket.cpp" "tests/*.h")
 
 
@@ -28,7 +29,13 @@ set(SOURCE_FILES
     ${TESTS_FILES}
     ${SRC_FILES})
 
-add_executable(Sendrecv ${SOURCE_FILES}  tests/driver.cpp)
-add_executable(pingpong_socket ${SOURCE_FILES} tests/pingpong_socket.cpp)
-add_executable(pingpong_rdma ${SOURCE_FILES} tests/pingpong_rdma.cpp)
-add_executable(pingpong_rdma_async_many ${SOURCE_FILES} tests/pingpong_rdma_async_many.cpp)
+set(ISEND_SOURCE_FILES
+        ${COMMON_FILES}
+        ${SRC_FILES}
+        ${NONBLOCK_FILES})
+
+add_executable(test_socket_isendrecv ${ISEND_SOURCE_FILES} tests_nonblocking/test_socket_isendrecv.cpp)
+#add_executable(Sendrecv ${SOURCE_FILES}  tests/driver.cpp)
+#add_executable(pingpong_socket ${SOURCE_FILES} tests/pingpong_socket.cpp)
+#add_executable(pingpong_rdma ${SOURCE_FILES} tests/pingpong_rdma.cpp)
+#add_executable(pingpong_rdma_async_many ${SOURCE_FILES} tests/pingpong_rdma_async_many.cpp)

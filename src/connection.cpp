@@ -5,6 +5,7 @@
 connection::connection(environment* env) 
     : _environment(env)
 {
+    is_sent_head.store(true);
     ASSERT(env);
 }
 

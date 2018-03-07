@@ -1,5 +1,6 @@
 #pragma once
 
+
 enum connection_status
 {
     CONNECTION_UNKNOWN = 0,
@@ -24,6 +25,13 @@ public:
     std::function<void (connection* conn, void* buffer, const size_t length)> OnReceive = nullptr;
     std::function<void (connection* conn, const int error)> OnHup = nullptr;
     std::function<void (connection* conn)> OnClose = nullptr;
+
+    //temporary set this to public
+    std::atomic<bool> is_sent_head;
+    data_state cur_recv_data;
+    tsqueue<data_state> recvd_data_queue;
+    tsqueue<handler*>   sending_data_queue;
+    tsqueue<handler*>   recving_data_queue;
 
     virtual bool async_send(const void* buffer, const size_t length) = 0;
     virtual bool async_send_many(const std::vector<fragment> frags) = 0;
