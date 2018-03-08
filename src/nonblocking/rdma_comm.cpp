@@ -303,6 +303,7 @@ bool rdma_comm::wait(handler *req) {
     CCALL(read(req->notify_fd, &dummy, sizeof(dummy)));
     close(req->notify_fd);
     ASSERT(req->is_finish);
+    req->is_fd_open = false;
     return true;
 }
 

@@ -36,6 +36,8 @@ set(ISEND_SOURCE_FILES
 
 add_executable(test_socket_isendrecv ${ISEND_SOURCE_FILES} tests_nonblocking/test_socket_isendrecv.cpp)
 add_executable(test_rdma_isendrecv ${ISEND_SOURCE_FILES} tests_nonblocking/test_rdma_isendrecv.cpp)
+add_executable(socket_isendrecv_speed ${ISEND_SOURCE_FILES} tests_nonblocking/socket_isendrecv_speed.cpp)
+add_executable(rdma_isendrecv_speed ${ISEND_SOURCE_FILES} tests_nonblocking/rdma_isendrecv_speed.cpp)
 #add_executable(Sendrecv ${SOURCE_FILES}  tests/driver.cpp)
 #add_executable(pingpong_socket ${SOURCE_FILES} tests/pingpong_socket.cpp)
 #add_executable(pingpong_rdma ${SOURCE_FILES} tests/pingpong_rdma.cpp)

@@ -150,14 +150,20 @@ typedef struct handler{
     int    dest;
     int    notify_fd;
     bool   is_finish;
+    bool   is_fd_open;
 public:
     handler():content_size(0), content(nullptr), src(-1), dest(-1), is_finish(false){
-        notify_fd = CCALL(eventfd(0, EFD_CLOEXEC));
+        notify_fd  = CCALL(eventfd(0, EFD_CLOEXEC));
+        is_fd_open = true;
         //IDEBUG("Create a handler with notify_fd = %d\n", notify_fd);
     }
     void set_handler(int s,  int d, size_t cs, char* c) {
         src = s; dest = d; content_size = cs; content = c;
         is_finish = false;
+        if(!is_fd_open){
+            notify_fd = CCALL(eventfd(0, EFD_CLOEXEC));
+            notify_fd = true;
+        }
     }
 }handler;
 #include "environment.h"

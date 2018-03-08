@@ -50,6 +50,8 @@ int main(){
                 ASSERT(memcmp(send_data, recv_data + src*DATA_LENGTH, DATA_LENGTH) == 0);
             }
             WARN("==========Rank %d almost finish task.\n", comm_object.get_rank());
+            free(send_data);
+            free(recv_data);
             comm_object.finalize();
         });
     }

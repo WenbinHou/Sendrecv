@@ -301,6 +301,7 @@ bool comm::wait(handler *req) {
     uint64_t dummy;
     CCALL(read(req->notify_fd, &dummy, sizeof(dummy)));
     close(req->notify_fd);
+    req->is_fd_open = false;
     ASSERT(req->is_finish);
     return true;
 }
