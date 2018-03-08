@@ -22,26 +22,35 @@ int main(){
             for (int i = 0; i < DATA_LENGTH; ++i) {
                 send_data[i] = (char)(unsigned char)i;
             }
-            std::this_thread::sleep_for(std::chrono::milliseconds(rankid * 10));
+            //std::this_thread::sleep_for(std::chrono::milliseconds(rankid * 10));
             comm comm_object;
 
-           /*comm_object.init(rankid, nodelist.size(), nodelist);
+           comm_object.init(rankid, nodelist.size(), nodelist);
+
            handler send_handlers[TOTAL_RANK];
            handler recv_handlers[TOTAL_RANK];
+
            for(int des = 0;des < comm_object.get_size();++des){
                comm_object.isend(des, send_data, DATA_LENGTH, send_handlers + des);
+               ITRACE("[Rank %d isend] to rank %d %lld btyes\n", comm_object.get_rank(), des, (long long)DATA_LENGTH);
            }
            for(int src = 0;src < comm_object.get_size();++src){
                comm_object.irecv(src, recv_data + src*DATA_LENGTH, DATA_LENGTH, recv_handlers + src);
            }
            for(int des = 0;des < comm_object.get_size();++des){
                comm_object.wait(send_handlers + des);
+               ASSERT(send_handlers[des].content = send_data + des);
+               ASSERT(send_handlers[des].is_finish);
+               ASSERT(send_handlers[des].dest == des);
+               ASSERT(send_handlers[des].src == comm_object.get_rank());
            }
            for(int src = 0;src < comm_object.get_size();++src){
+               DEBUG("!!!!xxxx!!!![Rank %d] wait for rank %d finished.\n", comm_object.get_rank(), src);
                comm_object.wait(recv_handlers + src);
                ASSERT(memcmp(send_data, recv_data + src*DATA_LENGTH, DATA_LENGTH) == 0);
            }
-           comm_object.finalize();*/
+           WARN("==========Rank %d almost finish task.\n", comm_object.get_rank());
+           comm_object.finalize();
         });
     }
     for(auto &p:process){

@@ -39,7 +39,10 @@ private:
     std::thread* _loop_thread = nullptr;
     int _epoll_fd = INVALID_FD;
 
+    //char dummy1[1024];
     int _notification_event_fd = INVALID_FD;
-    fd_data _notification_event_fddata;    
+    //char dummy2[1024];
+
+    fd_data _notification_event_fddata;
     tsqueue<event_data> _notification_queue;
 };

@@ -26,6 +26,7 @@ socket_environment::socket_environment()
         main_loop();
 
         // Do some cleaning work
+        //WARN("_notification_event_fd = %d\n", _notification_event_fd);
         CCALL(close(_notification_event_fd));
         _notification_event_fd = INVALID_FD;
 

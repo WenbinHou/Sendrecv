@@ -1,7 +1,7 @@
 #ifndef SENDRECV_COMM_H
 #define SENDRECV_COMM_H
 
-#define BASE_PORT 8800
+#define BASE_PORT 11111
 #include <vector>
 #include <mutex>
 #include <condition_variable>
@@ -13,7 +13,10 @@ public:
     comm(const comm&) = delete;
     comm(comm && ) = delete;
     comm & operator=(const comm&) = delete;
-    ~comm() = default;
+    ~comm() {
+        WARN("[Rank %d]ready to ~comm().\n", rank);
+        env.dispose();
+    }
 
 private:
     int  rank;

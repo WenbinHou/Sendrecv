@@ -37,13 +37,14 @@ bool comm::init(int rank, int size, std::vector<nodeinfo> &nlist) {
     };
     bool success = lis->start_accept();
     ASSERT(success);
+    usleep(100);
     int i = 0;
     for(const nodeinfo& node : nodelist){
         socket_connection* send_conn = env.create_connection(node.ip_addr, node.listen_port);
         set_send_connection_callback(i, send_conn);
         success = send_conn->async_connect();
         ASSERT(success);
-        ITRACE("[init]: try connecting to rank %d ip(%s) port(%d)\n", i, node.ip_addr, node.listen_port);
+        TRACE("[rank %d]: try connecting to rank %d ip(%s) port(%d)\n", this->rank, i, node.ip_addr, node.listen_port);
         i++;
     }
     std::unique_lock<std::mutex> lck(mtx);
@@ -67,26 +68,11 @@ void comm::set_send_connection_callback(int peer_rank, connection *send_conn) {
         bool success = conn->async_send(head, sizeof(datahead));
         ASSERT(success);
 
-        IDEBUG("[rank %d OnConnect] send_connection with rank %d ;nodeinfo:%s established. Sending INIT msg\n",
+        IDEBUG("[***********rank %d OnConnect] send_connection with rank %d ;nodeinfo:%s established. Sending INIT msg\n",
                this->rank, peer_rank,((socket_connection*)conn)->remote_endpoint().to_string().c_str());
     };
 
-    send_conn->OnConnectError = [peer_rank, this](connection *conn, const int error){
-        IDEBUG("[rank %d connect to rank %d OnConnectError]: %d (%s) try again\n",
-               this->rank, peer_rank, error, strerror(error));
-        conn->async_close();
-        usleep(100);
-        socket_connection * newconn = env.create_connection(
-                this->nodelist[peer_rank].ip_addr, this->nodelist[peer_rank].listen_port);
-        newconn->OnConnectError = conn->OnConnectError;
-        newconn->OnConnect = conn->OnConnect;
-        newconn->OnHup = conn->OnHup;
-        newconn->OnClose = conn->OnClose;
-        newconn->OnReceive = conn->OnReceive;
-        newconn->OnSend = conn->OnSend;
-        newconn->OnSendError = conn->OnSendError;
-        ASSERT(newconn->async_connect());
-    };
+
 
     send_conn->OnClose = [peer_rank, this](connection* conn){
         if(conn->get_conn_status() == CONNECTION_CONNECT_FAILED)
@@ -127,7 +113,7 @@ void comm::set_send_connection_callback(int peer_rank, connection *send_conn) {
             is_send_init_list[peer_rank] = true;
             datahead_pool.push((datahead*)const_cast<void*>(buffer));
             ITRACE("[rank %d] Has Sent the HEAD_TYPE_INIT to rank:%d\n",
-                   this->rank, (int)(((datahead*)buffer)->content_size));
+                   this->rank, (int)(((datahead*)buffer)->dest));
             this->has_conn_num++;
             if(has_conn_num == 2*this->size){
                 std::unique_lock<std::mutex> lck(mtx);
@@ -140,6 +126,21 @@ void comm::set_send_connection_callback(int peer_rank, connection *send_conn) {
         ERROR("[Rank %d] OnSendError: %d (%s). all %lld, sent %lld\n",
               this->rank, error, strerror(error), (long long)length, (long long)sent_length);
         ASSERT(0);
+    };
+
+    send_conn->OnConnectError = [peer_rank, this](connection *conn, const int error){
+        IDEBUG("[rank %d connect to rank %d OnConnectError]: %d (%s) try again\n",
+               this->rank, peer_rank, error, strerror(error));
+        conn->async_close();
+        socket_connection * newconn = env.create_connection(
+                this->nodelist[peer_rank].ip_addr, this->nodelist[peer_rank].listen_port);
+        newconn->OnConnectError = conn->OnConnectError;
+        newconn->OnConnect = conn->OnConnect;
+        newconn->OnHup = conn->OnHup;
+        newconn->OnClose = conn->OnClose;
+        newconn->OnSend = conn->OnSend;
+        newconn->OnSendError = conn->OnSendError;
+        ASSERT(newconn->async_connect());
     };
 }
 
@@ -168,15 +169,16 @@ void comm::set_recv_connection_callback(connection * recv_conn){
             size_t &rhs = conn->cur_recv_data.recvd_head_size;//rhs == recvd_head_size
             if(rhs < sizeof(datahead)){
                 if(left_len < sizeof(datahead) - rhs){
+                    memcpy(&(conn->cur_recv_data.head_msg)+rhs, cur_buf, left_len);
                     rhs += left_len;
-                    memcpy(&(conn->cur_recv_data.head_msg), cur_buf, left_len);
                     break;
                 }
                 else{
-                    rhs = sizeof(datahead);
-                    memcpy(&(conn->cur_recv_data.head_msg), cur_buf, sizeof(datahead) - rhs);
+                    memcpy(&(conn->cur_recv_data.head_msg)+rhs, cur_buf, sizeof(datahead) - rhs);
                     cur_buf  += (sizeof(datahead) - rhs);
                     left_len -= (sizeof(datahead) - rhs);
+                    rhs = sizeof(datahead);
+                    //WARN("left_len:%d\n", (int)left_len);
                     if(conn->cur_recv_data.head_msg.type == HEAD_TYPE_SEND){
                         size_t cts = conn->cur_recv_data.head_msg.content_size;
                         conn->cur_recv_data.total_content_size = cts;
@@ -191,6 +193,7 @@ void comm::set_recv_connection_callback(connection * recv_conn){
                         conn->cur_recv_data.clear();
                         this->has_conn_num++;
                         if(has_conn_num == 2*this->size){
+                            ITRACE("**********************************\n");
                             std::unique_lock<std::mutex> lck(mtx);
                             cv.notify_one();
                         }
@@ -202,21 +205,22 @@ void comm::set_recv_connection_callback(connection * recv_conn){
                 size_t &rcs = conn->cur_recv_data.recvd_content_size;
                 size_t &tcs = conn->cur_recv_data.total_content_size;
                 if(left_len < tcs - rcs){
+                    memcpy(conn->cur_recv_data.content + rcs, cur_buf, left_len);
                     rcs += left_len;
-                    memcpy(conn->cur_recv_data.content, cur_buf, left_len);
                     break;
                 }
                 else{
-                    rcs = conn->cur_recv_data.total_content_size;
-                    memcpy(conn->cur_recv_data.content, cur_buf, tcs - rcs);
+                    memcpy(conn->cur_recv_data.content + rcs, cur_buf, tcs - rcs);
                     cur_buf  += (tcs - rcs);
                     left_len -= (tcs - rcs);
+                    rcs = conn->cur_recv_data.total_content_size;
                     conn->recvd_data_queue.push(conn->cur_recv_data);
                     ITRACE("[rank %d] Has Recvd the %lld bytes data from rank %d\n",
                            this->rank, (long long)rcs, conn->cur_recv_data.head_msg.src);
                     conn->cur_recv_data.clear();
 
                     size_t notify_recv_num = _min(conn->recvd_data_queue.size(), conn->recving_data_queue.size());
+                    IDEBUG("[Rank %d] notify_recv_num:%d\n", this->rank, (int)notify_recv_num);
                     while(notify_recv_num--){
                         //every pop from recvd_data_queue, you need memcpy from recvd to recving
                         data_state recvd_data;
@@ -265,7 +269,32 @@ bool comm::irecv(int src, void *buf, size_t count, handler *req)
 {
     req->set_handler(src, this->rank, count, (char*)buf);
     ASSERT(recv_conn_list[src]);
-    recv_conn_list[src]->recving_data_queue.push(req);
+    connection* cur_recv_conn = recv_conn_list[src];
+    cur_recv_conn->recving_data_queue.push(req);
+    //There also need to decide the recving_data_queue.size and recvd_data_queue.size;
+
+    size_t notify_recv_num = _min(recv_conn_list[src]->recvd_data_queue.size(), recv_conn_list[src]->recving_data_queue.size());
+    DEBUG("///////[Rank %d] notify_recv_num:%d when call irecv.\n", this->rank, (int)notify_recv_num);
+    while(notify_recv_num--){
+        //every pop from recvd_data_queue, you need memcpy from recvd to recving
+        data_state recvd_data;
+        bool success = cur_recv_conn->recvd_data_queue.try_pop(&recvd_data);
+        ASSERT(success);
+        handler *recving_handler;
+        success = cur_recv_conn->recving_data_queue.try_pop(&recving_handler);
+        ASSERT(success);
+#ifndef NDEBUG
+        ASSERT(recvd_data.total_content_size == recvd_data.recvd_content_size);
+        ASSERT(recvd_data.total_content_size <= recving_handler->content_size);
+        ASSERT(recvd_data.head_msg.dest == recving_handler->dest);
+        ASSERT(recvd_data.head_msg.src  == recving_handler->src);
+#endif
+        memcpy(recving_handler->content, recvd_data.content, recvd_data.total_content_size);
+        recving_handler->is_finish = true;
+        uint64_t value = 1;
+        CCALL(write(recving_handler->notify_fd, &value, sizeof(value)));
+    }
+
     return true;
 }
 
@@ -279,9 +308,9 @@ bool comm::wait(handler *req) {
 
 bool comm::finalize() {
     //async_close all the connection
-    IDEBUG("[rank %d] ready to call finalize.\n", this->rank);
+    /*IDEBUG("[rank %d] ready to call finalize.\n", this->rank);
     for(int i = 0;i < this->size;++i){
         send_conn_list[i]->async_close();
         recv_conn_list[i]->async_close();
-    }
+    }*/
 }
