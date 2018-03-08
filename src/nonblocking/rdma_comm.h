@@ -1,19 +1,19 @@
-#ifndef SENDRECV_COMM_H
-#define SENDRECV_COMM_H
+#ifndef SENDRECV_RDMA_COMM_H
+#define SENDRECV_RDMA_COMM_H
 
 #define BASE_PORT 11111
 #include <vector>
 #include <mutex>
 #include <condition_variable>
 #include "utils.h"
-#include "sendrecv.h"
+#include "rdma/rdma_header.h"
 
-class comm {
+class rdma_comm {
 public:
-    comm(const comm&) = delete;
-    comm(comm && ) = delete;
-    comm & operator=(const comm&) = delete;
-    ~comm() {
+    rdma_comm(const rdma_comm&) = delete;
+    rdma_comm(rdma_comm &&) = delete;
+    rdma_comm & operator=(const rdma_comm&) = delete;
+    ~rdma_comm() {
         WARN("[Rank %d]ready to ~comm().\n", rank);
         env.dispose();
     }
@@ -27,8 +27,8 @@ private:
     std::vector<connection*> send_conn_list;
     std::vector<connection*> recv_conn_list;
     std::vector<bool>        is_send_init_list;//means the respectiive send conn whether finished init(send the rank)
-    socket_environment env;
-    socket_listener *lis;
+    rdma_environment env;
+    rdma_listener *lis;
 
     pool<datahead> datahead_pool;//used for get space for the head of send data
 
@@ -38,7 +38,7 @@ private:
 
     int close_conn_num;
 public:
-    comm();
+    rdma_comm();
     bool init(int rank, int size, std::vector<nodeinfo> &nodelist);
     bool isend(int dest, const void *buf, size_t count, handler *req);
     //handler or send_handler
@@ -54,6 +54,5 @@ private:
     void set_send_connection_callback(int conn_rank, connection * conn);
     void set_recv_connection_callback(connection * conn);
 };
-
 
 #endif

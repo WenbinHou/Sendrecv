@@ -1,12 +1,12 @@
-#include "comm.h"
+#include "rdma_comm.h"
 #define _min(a,b)    (((a) < (b)) ? (a) : (b))
 
-comm::comm() {
+rdma_comm::rdma_comm() {
 
 }
 
 //this is a blocking function
-bool comm::init(int rank, int size, std::vector<nodeinfo> &nlist) {
+bool rdma_comm::init(int rank, int size, std::vector<nodeinfo> &nlist) {
     this->nodelist.assign(nlist.begin(), nlist.end());
     ASSERT(size); ASSERT(size == this->nodelist.size());
     this->rank = rank; this->size = size;
@@ -14,13 +14,14 @@ bool comm::init(int rank, int size, std::vector<nodeinfo> &nlist) {
     my_listen_port = nodelist[rank].listen_port;
     ITRACE("Start init rank %d in all %d process[ ip(%s), port(%d)].\n",
            this->rank, this->size, my_listen_ip, my_listen_port);
+
     send_conn_list.resize(size); recv_conn_list.resize(size);
 
     is_send_init_list.assign(size, false);
     has_conn_num   = 0;
     close_conn_num = 0;
 
-    lis = env.create_listener(my_listen_ip, my_listen_port);
+    lis = env.create_rdma_listener(my_listen_ip, my_listen_port);
     //register the listen function;
     lis->OnAccept = [&](listener*,  connection* conn) {
         set_recv_connection_callback(conn);
@@ -39,7 +40,7 @@ bool comm::init(int rank, int size, std::vector<nodeinfo> &nlist) {
     usleep(100);
     int i = 0;
     for(const nodeinfo& node : nodelist){
-        socket_connection* send_conn = env.create_connection(node.ip_addr, node.listen_port);
+        rdma_connection* send_conn = env.create_rdma_connection(node.ip_addr, node.listen_port);
         set_send_connection_callback(i, send_conn);
         success = send_conn->async_connect();
         ASSERT(success);
@@ -53,7 +54,7 @@ bool comm::init(int rank, int size, std::vector<nodeinfo> &nlist) {
     IDEBUG("[rank %d] Have finished the init [has_conn_num = %d]\n", this->rank, has_conn_num);
 }
 
-void comm::set_send_connection_callback(int peer_rank, connection *send_conn) {
+void rdma_comm::set_send_connection_callback(int peer_rank, connection *send_conn) {
     send_conn->OnConnect = [peer_rank, this](connection* conn){
         //conn->start_receive();//you can doesn't call this function
         send_conn_list[peer_rank] = conn;
@@ -131,7 +132,7 @@ void comm::set_send_connection_callback(int peer_rank, connection *send_conn) {
         IDEBUG("[rank %d connect to rank %d OnConnectError]: %d (%s) try again\n",
                this->rank, peer_rank, error, strerror(error));
         conn->async_close();
-        socket_connection * newconn = env.create_connection(
+        rdma_connection * newconn = env.create_rdma_connection(
                 this->nodelist[peer_rank].ip_addr, this->nodelist[peer_rank].listen_port);
         newconn->OnConnectError = conn->OnConnectError;
         newconn->OnConnect = conn->OnConnect;
@@ -143,7 +144,7 @@ void comm::set_send_connection_callback(int peer_rank, connection *send_conn) {
     };
 }
 
-void comm::set_recv_connection_callback(connection * recv_conn){
+void rdma_comm::set_recv_connection_callback(connection * recv_conn){
 
     recv_conn->OnClose = [this](connection* conn){
         this->close_conn_num++;
@@ -228,12 +229,12 @@ void comm::set_recv_connection_callback(connection * recv_conn){
                         handler *recving_handler;
                         success = conn->recving_data_queue.try_pop(&recving_handler);
                         ASSERT(success);
-                    #ifndef NDEBUG
+#ifndef NDEBUG
                         ASSERT(recvd_data.total_content_size == recvd_data.recvd_content_size);
                         ASSERT(recvd_data.total_content_size <= recving_handler->content_size);
                         ASSERT(recvd_data.head_msg.dest == recving_handler->dest);
                         ASSERT(recvd_data.head_msg.src  == recving_handler->src);
-                    #endif
+#endif
                         memcpy(recving_handler->content, recvd_data.content, recvd_data.total_content_size);
                         recving_handler->is_finish = true;
                         uint64_t value = 1;
@@ -247,7 +248,7 @@ void comm::set_recv_connection_callback(connection * recv_conn){
     //there won't be OnSend and OnSendError
 }
 
-bool comm::isend(int dest, const void *buf, size_t count, handler *req)
+bool rdma_comm::isend(int dest, const void *buf, size_t count, handler *req)
 {
     req->set_handler(this->rank, dest, count, (char*)const_cast<void*>(buf));
     send_conn_list[dest]->sending_data_queue.push(req);
@@ -264,7 +265,7 @@ bool comm::isend(int dest, const void *buf, size_t count, handler *req)
     return true;
 }
 
-bool comm::irecv(int src, void *buf, size_t count, handler *req)
+bool rdma_comm::irecv(int src, void *buf, size_t count, handler *req)
 {
     req->set_handler(src, this->rank, count, (char*)buf);
     ASSERT(recv_conn_list[src]);
@@ -297,7 +298,7 @@ bool comm::irecv(int src, void *buf, size_t count, handler *req)
     return true;
 }
 
-bool comm::wait(handler *req) {
+bool rdma_comm::wait(handler *req) {
     uint64_t dummy;
     CCALL(read(req->notify_fd, &dummy, sizeof(dummy)));
     close(req->notify_fd);
@@ -305,7 +306,7 @@ bool comm::wait(handler *req) {
     return true;
 }
 
-bool comm::finalize() {
+bool rdma_comm::finalize() {
     //async_close all the connection
     /*IDEBUG("[rank %d] ready to call finalize.\n", this->rank);
     for(int i = 0;i < this->size;++i){
