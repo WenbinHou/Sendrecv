@@ -142,28 +142,38 @@ public:
     }
 
 };
-
+enum wait_type{
+    WAIT_ISEND = 0,
+    WAIT_IRECV,
+};
 typedef struct handler{
     size_t content_size;
     char*  content;
     int    src;
     int    dest;
-    int    notify_fd;
+    int    notify_fd; //only for WAIT_ISEND
     bool   is_finish;
     bool   is_fd_open;
+    enum  wait_type type;
 public:
-    handler():content_size(0), content(nullptr), src(-1), dest(-1), is_finish(false){
-        notify_fd  = CCALL(eventfd(0, EFD_CLOEXEC));
-        is_fd_open = true;
+    handler():content_size(0), content(nullptr), src(-1), dest(-1), is_finish(false), is_fd_open(false){
         //IDEBUG("Create a handler with notify_fd = %d\n", notify_fd);
     }
-    void set_handler(int s,  int d, size_t cs, char* c) {
-        src = s; dest = d; content_size = cs; content = c;
+    void set_handler(int s,  int d, size_t cs, char* c, enum wait_type t) {
+        src  = s;
+        dest = d;
+        content_size = cs;
+        content = c;
+        type    = t;
         is_finish = false;
-        if(!is_fd_open){
-            notify_fd = CCALL(eventfd(0, EFD_CLOEXEC));
-            notify_fd = true;
+        if(type == WAIT_ISEND){
+            if(!is_fd_open){
+                notify_fd = CCALL(eventfd(0, EFD_CLOEXEC));
+                is_fd_open = true;
+            }
         }
+        //WAIT_IRECV is not related with notify_fd & is_fd_open
+
     }
 }handler;
 #include "environment.h"

@@ -1,3 +1,4 @@
+#include <sendrecv.h>
 #include "comm.h"
 #define _min(a,b)    (((a) < (b)) ? (a) : (b))
 
@@ -96,16 +97,21 @@ void comm::set_send_connection_callback(int peer_rank, connection *send_conn) {
     send_conn->OnSend = [peer_rank, this](connection* conn, const void* buffer, const size_t length) {
         if(is_send_init_list[peer_rank]){
             if(conn->is_sent_head){
+                WARN("sizeof(*(char*)buffer  %lld\n", (long long) length);
+                ASSERT(length == sizeof(datahead));
                 datahead_pool.push((datahead*)const_cast<void*>(buffer));
                 conn->is_sent_head = false;//means next onsend buffer is the real send content
             }
             else{
                 handler *send_handler;
                 bool success = conn->sending_data_queue.try_pop(&send_handler);
-                ASSERT(success); ASSERT(send_handler);
+                ASSERT(success);
+                ASSERT(send_handler);
+                conn->is_sent_head = true;
                 send_handler->is_finish = true;
                 uint64_t value = 1;
                 CCALL(write(send_handler->notify_fd, &value, sizeof(value)));
+
             }
         }
         else{
@@ -192,7 +198,6 @@ void comm::set_recv_connection_callback(connection * recv_conn){
                         conn->cur_recv_data.clear();
                         this->has_conn_num++;
                         if(has_conn_num == 2*this->size){
-                            ITRACE("**********************************\n");
                             std::unique_lock<std::mutex> lck(mtx);
                             cv.notify_one();
                         }
@@ -217,28 +222,6 @@ void comm::set_recv_connection_callback(connection * recv_conn){
                     ITRACE("[rank %d] Has Recvd the %lld bytes data from rank %d\n",
                            this->rank, (long long)rcs, conn->cur_recv_data.head_msg.src);
                     conn->cur_recv_data.clear();
-
-                    size_t notify_recv_num = _min(conn->recvd_data_queue.size(), conn->recving_data_queue.size());
-                    IDEBUG("[Rank %d] notify_recv_num:%d\n", this->rank, (int)notify_recv_num);
-                    while(notify_recv_num--){
-                        //every pop from recvd_data_queue, you need memcpy from recvd to recving
-                        data_state recvd_data;
-                        bool success = conn->recvd_data_queue.try_pop(&recvd_data);
-                        ASSERT(success);
-                        handler *recving_handler;
-                        success = conn->recving_data_queue.try_pop(&recving_handler);
-                        ASSERT(success);
-                    #ifndef NDEBUG
-                        ASSERT(recvd_data.total_content_size == recvd_data.recvd_content_size);
-                        ASSERT(recvd_data.total_content_size <= recving_handler->content_size);
-                        ASSERT(recvd_data.head_msg.dest == recving_handler->dest);
-                        ASSERT(recvd_data.head_msg.src  == recving_handler->src);
-                    #endif
-                        memcpy(recving_handler->content, recvd_data.content, recvd_data.total_content_size);
-                        recving_handler->is_finish = true;
-                        uint64_t value = 1;
-                        CCALL(write(recving_handler->notify_fd, &value, sizeof(value)));
-                    }
                     continue;
                 }
             }
@@ -249,7 +232,7 @@ void comm::set_recv_connection_callback(connection * recv_conn){
 
 bool comm::isend(int dest, const void *buf, size_t count, handler *req)
 {
-    req->set_handler(this->rank, dest, count, (char*)const_cast<void*>(buf));
+    req->set_handler(this->rank, dest, count, (char*)const_cast<void*>(buf), WAIT_ISEND);
     send_conn_list[dest]->sending_data_queue.push(req);
     //create the head of data
     datahead* head_ctx = datahead_pool.pop();
@@ -263,47 +246,53 @@ bool comm::isend(int dest, const void *buf, size_t count, handler *req)
     send_conn_list[dest]->async_send_many(pending_send_ctx);
     return true;
 }
-
+// if a lot of recv
 bool comm::irecv(int src, void *buf, size_t count, handler *req)
 {
-    req->set_handler(src, this->rank, count, (char*)buf);
+    req->set_handler(src, this->rank, count, (char*)buf, WAIT_IRECV);
     ASSERT(recv_conn_list[src]);
+
     connection* cur_recv_conn = recv_conn_list[src];
     cur_recv_conn->recving_data_queue.push(req);
     //There also need to decide the recving_data_queue.size and recvd_data_queue.size;
-
-    size_t notify_recv_num = _min(recv_conn_list[src]->recvd_data_queue.size(), recv_conn_list[src]->recving_data_queue.size());
-    DEBUG("///////[Rank %d] notify_recv_num:%d when call irecv.\n", this->rank, (int)notify_recv_num);
-    while(notify_recv_num--){
-        //every pop from recvd_data_queue, you need memcpy from recvd to recving
-        data_state recvd_data;
-        bool success = cur_recv_conn->recvd_data_queue.try_pop(&recvd_data);
-        ASSERT(success);
-        handler *recving_handler;
-        success = cur_recv_conn->recving_data_queue.try_pop(&recving_handler);
-        ASSERT(success);
-#ifndef NDEBUG
-        ASSERT(recvd_data.total_content_size == recvd_data.recvd_content_size);
-        ASSERT(recvd_data.total_content_size <= recving_handler->content_size);
-        ASSERT(recvd_data.head_msg.dest == recving_handler->dest);
-        ASSERT(recvd_data.head_msg.src  == recving_handler->src);
-#endif
-        memcpy(recving_handler->content, recvd_data.content, recvd_data.total_content_size);
-        recving_handler->is_finish = true;
-        uint64_t value = 1;
-        CCALL(write(recving_handler->notify_fd, &value, sizeof(value)));
-    }
-
     return true;
 }
 
 bool comm::wait(handler *req) {
-    uint64_t dummy;
-    CCALL(read(req->notify_fd, &dummy, sizeof(dummy)));
-    close(req->notify_fd);
-    req->is_fd_open = false;
-    ASSERT(req->is_finish);
-    return true;
+    if(req->type == WAIT_ISEND){
+        uint64_t dummy;
+        CCALL(read(req->notify_fd, &dummy, sizeof(dummy)));
+        close(req->notify_fd);
+        req->is_fd_open = false;
+        ASSERT(req->is_finish);
+        return true;
+    }
+    else if(req->type == WAIT_IRECV){
+        int src = req->src;
+        if(req->is_finish)
+            return true;
+
+        connection* cur_recv_conn = recv_conn_list[src];
+        while(true){
+            handler *tmp_req;
+            bool success = cur_recv_conn->recving_data_queue.try_pop(&tmp_req);
+            ASSERT(success);
+
+            data_state tmp_recvd_data;
+            while(!(cur_recv_conn->recvd_data_queue.try_pop(&tmp_recvd_data))){}
+#ifndef NDEBUG
+            ASSERT(tmp_recvd_data.total_content_size == tmp_recvd_data.recvd_content_size);
+            ASSERT(tmp_recvd_data.total_content_size <= tmp_req->content_size);
+            ASSERT(tmp_recvd_data.head_msg.dest == tmp_req->dest);
+            ASSERT(tmp_recvd_data.head_msg.src  == tmp_req->src);
+#endif
+            memcpy(tmp_req->content, tmp_recvd_data.content, tmp_recvd_data.total_content_size);
+            tmp_req->is_finish = true;
+            if(tmp_req == req){
+                return true;
+            }
+        }
+    }
 }
 
 bool comm::finalize() {
