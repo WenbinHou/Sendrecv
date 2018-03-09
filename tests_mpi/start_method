@@ -1,0 +1,2 @@
+mpirun -np 2 --mca btl self,openib  --hostfile ./hosts ./mpi_speed 1
+mpirun -np 2 --mca btl self,tcp  --hostfile ./hosts ./mpi_speed 1
