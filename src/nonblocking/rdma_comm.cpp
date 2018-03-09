@@ -103,8 +103,10 @@ void rdma_comm::set_send_connection_callback(int peer_rank, connection *send_con
             else{
                 handler *send_handler;
                 bool success = conn->sending_data_queue.try_pop(&send_handler);
-                ASSERT(success); ASSERT(send_handler);
+                ASSERT(success); 
+                ASSERT(send_handler);
                 send_handler->is_finish = true;
+                conn->is_sent_head = true;
                 uint64_t value = 1;
                 CCALL(write(send_handler->notify_fd, &value, sizeof(value)));
             }

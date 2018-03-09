@@ -471,7 +471,7 @@ void rdma_connection::try_to_send()
 
 void rdma_connection::process_poll_cq(struct ibv_cq *ret_cq, struct ibv_wc *ret_wc_array, int num_cqe)
 {
-    WARN("num_cqe is %d\n", num_cqe); 
+    //WARN("num_cqe is %d\n", num_cqe); 
     for(int i = 0;i < num_cqe;i++){
         process_one_cqe(ret_wc_array+i);    
     }
@@ -729,10 +729,11 @@ void rdma_connection::process_one_cqe(struct ibv_wc *wc) {
                 //regard as sge_list has more than one sge
                 for(int i = 0; i < sge_list->num_sge;++i){
                     if(sge_list->sge_info_list[i].end){
-                        TRACE("Have complete a buffer send with addr : %ld, sge_list->num_sge = %ld\n",
-                              (uintptr_t)sge_list->sge_info_list[i].send_start, sge_list->num_sge);
+                        TRACE("Have complete a buffer send with addr : %ld, sge_list->num_sge = %ld lenght %d \n",
+                              (uintptr_t)sge_list->sge_info_list[i].send_start, sge_list->num_sge, sge_list->sge_info_list[i].send_length);
                         if(OnSend){
                             ASSERT(sge_list->sge_info_list[i].send_length);
+                            ERROR("xxxxxxxxxxxxxxxxxxxxxxxxx\n");
                             OnSend(this, sge_list->sge_info_list[i].send_start, sge_list->sge_info_list[i].send_length);
                         }
                         _rundown.release();
