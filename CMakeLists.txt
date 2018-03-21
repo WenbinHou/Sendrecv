@@ -22,8 +22,6 @@ file(GLOB SRC_FILES "src/*.cpp" "src/*.h" "src/*.hpp" "src/rdma/*.cpp" "src/rdma
 file(GLOB NONBLOCK_FILES "src/nonblocking/*.cpp" "src/nonblocking/*.h")
 #file(GLOB PINGPONG "tests/pingpong_socket.cpp" "tests/*.h")
 
-
-
 set(SOURCE_FILES
     ${COMMON_FILES}
     ${TESTS_FILES}
@@ -34,12 +32,13 @@ set(ISEND_SOURCE_FILES
         ${SRC_FILES}
         ${NONBLOCK_FILES})
 
-add_executable(test_socket_isendrecv ${ISEND_SOURCE_FILES} tests_nonblocking/test_socket_isendrecv.cpp)
-add_executable(test_rdma_isendrecv ${ISEND_SOURCE_FILES} tests_nonblocking/test_rdma_isendrecv.cpp)
-add_executable(socket_isendrecv_speed ${ISEND_SOURCE_FILES} tests_nonblocking/socket_isendrecv_speed.cpp)
-add_executable(rdma_isendrecv_speed ${ISEND_SOURCE_FILES} tests_nonblocking/rdma_isendrecv_speed.cpp)
-add_executable(socket_speed_single ${ISEND_SOURCE_FILES} tests_nonblocking/socket_speed_single.cpp)
-add_executable(rdma_speed_single ${ISEND_SOURCE_FILES} tests_nonblocking/rdma_speed_single.cpp)
+add_executable(samplesort ${ISEND_SOURCE_FILES} src/samplesort/samplesort_sendrecv.cpp)
+#add_executable(test_socket_isendrecv ${ISEND_SOURCE_FILES} tests_nonblocking/test_socket_isendrecv.cpp)
+#add_executable(test_rdma_isendrecv ${ISEND_SOURCE_FILES} tests_nonblocking/test_rdma_isendrecv.cpp)
+#add_executable(socket_isendrecv_speed ${ISEND_SOURCE_FILES} tests_nonblocking/socket_isendrecv_speed.cpp)
+#add_executable(rdma_isendrecv_speed ${ISEND_SOURCE_FILES} tests_nonblocking/rdma_isendrecv_speed.cpp)
+#add_executable(socket_speed_single ${ISEND_SOURCE_FILES} tests_nonblocking/socket_speed_single.cpp)
+#add_executable(rdma_speed_single ${ISEND_SOURCE_FILES} tests_nonblocking/rdma_speed_single.cpp)
 #add_executable(Sendrecv ${SOURCE_FILES}  tests/driver.cpp)
 #add_executable(pingpong_socket ${SOURCE_FILES} tests/pingpong_socket.cpp)
 #add_executable(pingpong_rdma ${SOURCE_FILES} tests/pingpong_rdma.cpp)
