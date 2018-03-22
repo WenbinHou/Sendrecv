@@ -8,7 +8,7 @@ static size_t server_receive_bytes = 0;
 static bool is_client = false;
 static char ip[16];
 static size_t datasize;
-static size_t size_MB;
+static size_t size_KB;
 static int times, senttimes = 0, recvtimes = 0;
 //static char* buffer;
 
@@ -78,8 +78,8 @@ void set_client()
         if(recvtimes == times){
             end_time = get_curtime();
             long long consume_time = end_time - start_time;
-            NOTICE("[Client] consume time is %lld, speed %.lf  MBytes/sec\n",
-                   (long long)consume_time, (double)(size_MB * 2 * times)/consume_time*1000000 );
+            SUCC("[Client] consume time is %lld, speed %.6lf  MBytes/sec\n",
+                   (long long)consume_time, (double)size_KB/1024*2*times/((double)consume_time/1000000) );
             SUCC("[Client] have recv all the data ready to close.\n");
             bool success = conn->async_close();
             TEST_ASSERT(success);
@@ -191,8 +191,8 @@ int main(int argc, char *argv[])
                 }
                 break;
             case 'n':
-                size_MB = atoi(optarg);
-                datasize = size_MB * 1024 *1024;
+                size_KB = atoi(optarg);
+                datasize = size_KB * 1024;
                 break;
             case 't':
                 times = atoi(optarg);

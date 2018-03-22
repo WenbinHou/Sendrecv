@@ -5,6 +5,7 @@
 //current only for two node test
 int myrank;
 int allsize;
+int iters;
 std::vector<nodeinfo> nodelist;
 size_t send_bytes;
 
@@ -42,7 +43,7 @@ int main(int argc, char* argv[])
         exit(0);
     }
     int op;
-    while ((op = getopt(argc, argv, "i:f:n:")) != -1){
+    while ((op = getopt(argc, argv, "i:f:n:t:")) != -1){
         switch(op){
             case 'i':
                 myrank = atoi(optarg);
@@ -55,6 +56,9 @@ int main(int argc, char* argv[])
             case 'n':
                 send_bytes =  (size_t)1024 * atoi(optarg);
                 ITRACE("Isend & irecv %lld bytes data.\n", (long long)send_bytes);
+                break;
+            case 't':
+                iters = atoi(optarg);
                 break;
             default:
                 ERROR("parameter is error.\n");
@@ -72,18 +76,19 @@ int main(int argc, char* argv[])
 
     handler send_handler, recv_handler;
     long long start_time = get_curtime();
-    for(int i = 0;i < 100;++i){
+    for(int i = 0;i < iters;++i){
         comm_object.isend(peerrank, send_data, send_bytes, &send_handler);
         comm_object.irecv(peerrank, recv_data, send_bytes, &recv_handler);
         comm_object.wait(&send_handler);
         comm_object.wait(&recv_handler);
-        //SUCC("[rank %d] finish iter %d isend & irecv.\n", comm_object.get_rank(), i);
+
         //ASSERT(memcmp(recv_data, send_data, send_bytes) == 0);
     }
     long long consume_time = get_curtime() - start_time;
-    size_t total_bytes = (size_t)100 * send_bytes* 2;
+    size_t total_bytes = (size_t)iters * send_bytes* 2;
+    double double_time = (double)consume_time/1000000;
     double speed = (double)total_bytes/1024/1024/((double)consume_time/1000000);
-    SUCC("[rank %d] tranfer_size:%lld consume_time:%.3lf speed:%.3lf\n",
-         comm_object.get_rank(), (long long)total_bytes, (double)consume_time/1000000, speed);
+    SUCC("[rank %d] tranfer_size:%lld consume_time:%.6lf speed:%.6lfMbytes/sec %.6lfiters/sec\n",
+         comm_object.get_rank(), (long long)total_bytes, double_time, speed, iters/double_time);
     comm_object.finalize();
 }

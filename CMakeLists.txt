@@ -41,6 +41,6 @@ add_executable(rdma_isendrecv_speed ${ISEND_SOURCE_FILES} tests_nonblocking/rdma
 add_executable(socket_speed_single ${ISEND_SOURCE_FILES} tests_nonblocking/socket_speed_single.cpp)
 add_executable(rdma_speed_single ${ISEND_SOURCE_FILES} tests_nonblocking/rdma_speed_single.cpp)
 #add_executable(Sendrecv ${SOURCE_FILES}  tests/driver.cpp)
-#add_executable(pingpong_socket ${SOURCE_FILES} tests/pingpong_socket.cpp)
-#add_executable(pingpong_rdma ${SOURCE_FILES} tests/pingpong_rdma.cpp)
+add_executable(pingpong_socket ${SOURCE_FILES} tests/pingpong_socket.cpp)
+add_executable(pingpong_rdma ${SOURCE_FILES} tests/pingpong_rdma.cpp)
 #add_executable(pingpong_rdma_async_many ${SOURCE_FILES} tests/pingpong_rdma_async_many.cpp)
