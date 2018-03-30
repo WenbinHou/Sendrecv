@@ -81,7 +81,7 @@ rdma_conn_p2p* conn_system::init(char* peer_ip, int peer_port)
     SUCC("!!!!!FINISH INIT TO %s.!!!!!\n", key.c_str());
     int post_num = conn_object->test_post_n_recv(conn_object->recv_rdma_conn.pd,
                                                  conn_object->recv_rdma_conn.qp, POST_TIMES, BUF_SIZES);
-    ASSERT(post_num == 100);
+    ASSERT(post_num == POST_TIMES);
     conn_object->modify_qp_to_rtr(conn_object->recv_rdma_conn.qp, conn_object->recv_direction_qp.qpn,
                                conn_object->recv_direction_qp.lid, conn_object->recv_rdma_conn.ib_port);
     return conn_object;
