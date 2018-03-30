@@ -208,7 +208,7 @@ int rdma_conn_p2p::wait_poll_send(){
             }
         }
         result += n;
-        WARN("COMPLETE num = %d\n", result);
+        //WARN("COMPLETE num = %d\n", result);
     }while (result < POST_TIMES);
     double elapsed_time = _timer.elapsed();
     double speed = (double)POST_TIMES * BUF_SIZES/1024/1024/elapsed_time;
@@ -238,7 +238,7 @@ int rdma_conn_p2p::wait_poll_recv(){
             }
         }
         result += n;
-        WARN("COMPLETE RECV NUM = %d\n", result);
+        //WARN("COMPLETE RECV NUM = %d\n", result);
     }while (result < POST_TIMES);
     return result;
 }
