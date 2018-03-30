@@ -19,7 +19,17 @@ int main()
             conn_system sys("127.0.0.1", LOCAL_PORT+i);
             rdma_conn_p2p *rdma_conn_object = sys.init(PEER_HOST, PEER_PORT_BASE + (i+1)%2);
             ASSERT(rdma_conn_object);
-            WARN("%s:%d init finished.\n", LOCAL_HOST, LOCAL_PORT+i);
+            WARN("[%s:%d] init finished.\n", LOCAL_HOST, LOCAL_PORT+i);
+            if(i == 0){
+                //send 100 times buffer_size = 8388608
+                rdma_conn_object->test_send();
+                int n = rdma_conn_object->wait_poll_send();
+                ASSERT(n == 100);
+            }
+            else{
+                int n = rdma_conn_object->wait_poll_recv();
+                ASSERT(n == 100);
+            }
         });
     }
     for(auto& t: processes)
