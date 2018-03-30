@@ -21,14 +21,14 @@ int main()
             ASSERT(rdma_conn_object);
             WARN("[%s:%d] init finished.\n", LOCAL_HOST, LOCAL_PORT+i);
             if(i == 0){
-                //send 100 times buffer_size = 8388608
+                usleep(1000);
                 rdma_conn_object->test_send();
                 int n = rdma_conn_object->wait_poll_send();
-                ASSERT(n == 100);
+                ASSERT(n == POST_TIMES);
             }
             else{
                 int n = rdma_conn_object->wait_poll_recv();
-                ASSERT(n == 100);
+                ASSERT(n == POST_TIMES);
             }
         });
     }

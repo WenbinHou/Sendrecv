@@ -5,6 +5,8 @@
 #include <sendrecv.h>
 #include <string>
 #include <common/safemap.h>
+#define POST_TIMES 10
+#define BUF_SIZES  (1024*1024*8)
 
 class rdma_conn_p2p;
 

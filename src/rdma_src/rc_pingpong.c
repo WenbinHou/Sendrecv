@@ -620,7 +620,6 @@ static inline int parse_single_wc(struct pingpong_context *ctx, int *scnt,
 		if (use_ts) {
 			if (ts->last_comp_with_ts) {
 				uint64_t delta;
-
 				/* checking whether the clock was wrapped around */
 				if (completion_timestamp >= ts->comp_recv_prev_time)
 					delta = completion_timestamp - ts->comp_recv_prev_time;

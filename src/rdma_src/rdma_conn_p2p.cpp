@@ -59,7 +59,7 @@ void rdma_conn_p2p::create_qp_info(unidirection_rdma_conn &rdma_conn_info){
     init_attr.cap.max_inline_data = MAX_INLINE_LEN;
     init_attr.qp_type = IBV_QPT_RC;
     //init_attr.sq_sig_all = 0;
-    init_attr.sq_sig_all = 0;
+    init_attr.sq_sig_all = 1;
     init_attr.qp_context = (void*)this;
 
     rdma_conn_info.qp = ibv_create_qp(rdma_conn_info.pd, &init_attr);
@@ -67,6 +67,7 @@ void rdma_conn_p2p::create_qp_info(unidirection_rdma_conn &rdma_conn_info){
 
 
     struct ibv_qp_attr attr;
+    memset(&attr, 0, sizeof(attr));
     attr.qp_state = IBV_QPS_INIT;
     attr.pkey_index = 0;
     attr.port_num   = rdma_conn_info.ib_port;
@@ -156,6 +157,7 @@ int rdma_conn_p2p::test_post_n_send(struct ibv_pd *pd, struct ibv_qp *qp, int n,
     struct ibv_mr *send_mr = ibv_reg_mr(pd, send_region, size, IBV_ACCESS_LOCAL_WRITE);
     ASSERT(send_mr);
     int ret_post_num = 0;
+    _timer.reset();
     for(int i = 0;i < n;i++)
     {
         struct ibv_send_wr wr, *bad_wr = NULL;
@@ -165,7 +167,7 @@ int rdma_conn_p2p::test_post_n_send(struct ibv_pd *pd, struct ibv_qp *qp, int n,
         wr.opcode = IBV_WR_SEND;
         wr.sg_list = &sge;
         wr.num_sge = 1;
-        if(i == n-1) wr.send_flags = IBV_SEND_SIGNALED;
+        //if(i == n-1) wr.send_flags = IBV_SEND_SIGNALED;
 
         sge.addr = (uintptr_t)send_region;
         sge.length = size;
@@ -176,24 +178,23 @@ int rdma_conn_p2p::test_post_n_send(struct ibv_pd *pd, struct ibv_qp *qp, int n,
         }
         ret_post_num++;
     }
-    IDEBUG("have already send 100 post_send\n");
+    IDEBUG("have already send %d post_send\n", POST_TIMES);
     return ret_post_num;
 }
 
 void rdma_conn_p2p::test_send() {
-    test_post_n_recv(send_rdma_conn.pd, send_rdma_conn.qp, 1, 8388608);//
     modify_qp_to_rtr(send_rdma_conn.qp, send_direction_qp.qpn, send_direction_qp.lid, send_rdma_conn.ib_port);
     modify_qp_to_rts(send_rdma_conn.qp);
-    test_post_n_send(send_rdma_conn.pd, send_rdma_conn.qp, 100, 8388608);
+    test_post_n_send(send_rdma_conn.pd, send_rdma_conn.qp, POST_TIMES, BUF_SIZES);
 }
 
 int rdma_conn_p2p::wait_poll_send(){
     int n, i;
-    struct ibv_wc wc[100];
+    struct ibv_wc wc[POST_TIMES];
     struct ibv_cq *cq = send_rdma_conn.cq;
     int result = 0;
     do {
-        n = ibv_poll_cq(cq, 100, wc);
+        n = ibv_poll_cq(cq, POST_TIMES, wc);
         if(n < 0) {
             ERROR("something wrong.\n");
             ASSERT(0);
@@ -208,18 +209,22 @@ int rdma_conn_p2p::wait_poll_send(){
         }
         result += n;
         WARN("COMPLETE num = %d\n", result);
-    }while (result < 100);
+    }while (result < POST_TIMES);
+    double elapsed_time = _timer.elapsed();
+    double speed = (double)POST_TIMES * BUF_SIZES/1024/1024/elapsed_time;
+    SUCC("Transfer size:%d MBytes Consume_time:%.2lfs speed:%.2lf\n",
+         POST_TIMES * BUF_SIZES/1024/1024, elapsed_time, speed);
     return result;
 }
 
 
 int rdma_conn_p2p::wait_poll_recv(){
     int n, i;
-    struct ibv_wc wc[100];
+    struct ibv_wc wc[POST_TIMES];
     struct ibv_cq *cq = recv_rdma_conn.cq;
     int result = 0;
     do {
-        n = ibv_poll_cq(cq, 100, wc);
+        n = ibv_poll_cq(cq, POST_TIMES, wc);
         if(n < 0) {
             ERROR("something wrong.\n");
             ASSERT(0);
@@ -234,6 +239,6 @@ int rdma_conn_p2p::wait_poll_recv(){
         }
         result += n;
         WARN("COMPLETE RECV NUM = %d\n", result);
-    }while (result < 100);
+    }while (result < POST_TIMES);
     return result;
 }

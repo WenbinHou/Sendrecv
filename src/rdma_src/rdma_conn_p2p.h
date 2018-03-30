@@ -1,17 +1,20 @@
 #ifndef SENDRECV_RDMA_CONN_P2P_H
 #define SENDRECV_RDMA_CONN_P2P_H
 
-#include "rdma_conn_p2p.h"
 #include "rdma_resource.h"
 #include <sendrecv.h>
 #include <sys/eventfd.h>
+#include <sys/time.h>
 #include "conn_system.h"
+
+
 
 class rdma_conn_p2p {
     friend class conn_system;
 private:
     int send_event_fd ;
     int recv_event_fd ;
+    timer _timer;
 private:
     unidirection_rdma_conn send_rdma_conn;
     exchange_qp_data send_direction_qp;
