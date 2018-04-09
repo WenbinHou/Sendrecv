@@ -42,7 +42,7 @@ int main (int argc, char *argv[])
     }
     double consume_time = get_curtime() - start_time;
     size_t total_bytes = (size_t)100 * send_bytes* 2;
-    double speed = (double)total_bytes/1024/consume_time;
+    double speed = (double)total_bytes/1024/1024/consume_time;
     printf("[rank %d] tranfer_size:%lld consume_time:%.6lf speed:%.2lfMBytes/sec %.6lf iters/sec\n",
          myrank, (long long)total_bytes, consume_time, speed, (double)100/consume_time);
 
