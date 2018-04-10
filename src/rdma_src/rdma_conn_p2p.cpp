@@ -117,7 +117,7 @@ void rdma_conn_p2p::create_qp_info(unidirection_rdma_conn &rdma_conn_info, bool 
             CCALL(pp_post_recv(rdma_conn_info.qp, (uintptr_t)(&post_array[i]), post_array_mr[i]->lkey,
                           sizeof(send_req_clt_info), post_array_mr[i]));
         }*/
-        test_extreme_speed(100, 512*1024, false);
+        test_extreme_speed(500, 1024*1024, false);
         modify_qp_to_rtr(rdma_conn_info.qp, recv_direction_qp.qpn, recv_direction_qp.lid, rdma_conn_info.ib_port);
         modify_qp_to_rts(rdma_conn_info.qp);
         SUCC("Finish create the recv qp ~~~~~~~.\n");
@@ -698,15 +698,21 @@ void rdma_conn_p2p::test_extreme_speed(int iters, size_t send_size, bool is_send
         while (total_finished < iters)
         {
             n = ibv_poll_cq(send_rdma_conn.cq, iters , wc);
-            for(int k = 0;k < n;k++){
-                ASSERT(wc[k].status == IBV_WC_SUCCESS);
+            if(n > 0){
+                //SUCC("ibv_poll_cq : %d.\n", n);
+                for(int k = 0;k < n;k++){
+                    ASSERT(wc[k].status == IBV_WC_SUCCESS);
+                }
+                total_finished += n;
             }
-            total_finished += n;
+            else if(n < 0){
+                ASSERT(0);
+            }          
         }
         double time_spend = _test_start.elapsed();
         size_t total_size = iters * send_size;
         ITR_SPECIAL("have send %d times, total_size %lld, speed %.2lf.\n",
-                    total_finished, (long long)total_size, (double)total_size/time_spend);
+                    total_finished, (long long)total_size, (double)total_size/1024/1024/time_spend);
     }
     else{
         char *recv_region_list[500];

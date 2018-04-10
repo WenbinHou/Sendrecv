@@ -6,7 +6,7 @@ conn_system::~conn_system() {
     env.dispose();
     connecting_map.Foreach([](std::string key, rdma_conn_p2p * conn){
         conn->isruning = false;
-        conn->poll_thread->join();
+        //conn->poll_thread->join();
     });
 }
 
@@ -97,7 +97,7 @@ rdma_conn_p2p* conn_system::init(char* peer_ip, int peer_port)
     SUCC("[===== %s_%d FINISH INIT TO %s.=====]\n", my_listen_ip, my_listen_port, key.c_str());
     //close used fd
     conn_object->clean_used_fd();
-    run_poll_thread(conn_object);
+    //run_poll_thread(conn_object);
     //ERROR("===================\n");
     return conn_object;
 }
