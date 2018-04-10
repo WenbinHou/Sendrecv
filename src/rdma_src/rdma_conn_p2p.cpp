@@ -108,7 +108,7 @@ void rdma_conn_p2p::create_qp_info(unidirection_rdma_conn &rdma_conn_info, bool 
         ASSERT(recv_local_buf_status.pos_isend == 0);
 
         //ibv_post_recv
-        post_array = new send_req_clt_info[MAX_POST_RECV_NUM];
+        /*post_array = new send_req_clt_info[MAX_POST_RECV_NUM];
 
         post_array_mr = new struct ibv_mr*[MAX_POST_RECV_NUM];
 
@@ -116,7 +116,8 @@ void rdma_conn_p2p::create_qp_info(unidirection_rdma_conn &rdma_conn_info, bool 
             post_array_mr[i] =  ibv_reg_mr(rdma_conn_info.pd, &(post_array[i]), sizeof(send_req_clt_info), IBV_ACCESS_LOCAL_WRITE|IBV_ACCESS_REMOTE_WRITE);
             CCALL(pp_post_recv(rdma_conn_info.qp, (uintptr_t)(&post_array[i]), post_array_mr[i]->lkey,
                           sizeof(send_req_clt_info), post_array_mr[i]));
-        }
+        }*/
+        test_extreme_speed(100, 512*1024, false);
         modify_qp_to_rtr(rdma_conn_info.qp, recv_direction_qp.qpn, recv_direction_qp.lid, rdma_conn_info.ib_port);
         modify_qp_to_rts(rdma_conn_info.qp);
         SUCC("Finish create the recv qp ~~~~~~~.\n");
@@ -664,4 +665,75 @@ bool rdma_conn_p2p::wait(non_block_handle* req){
 void rdma_conn_p2p::clean_used_fd(){
     send_socket_conn->async_close();
     recv_socket_conn->async_close();
+}
+
+void rdma_conn_p2p::test_extreme_speed(int iters, size_t send_size, bool is_send){
+    if(is_send){
+        char *send_region = (char*)malloc(send_size);
+        for (size_t i = 0; i < send_size; ++i) {
+            send_region[i] = (char)(unsigned char)i;
+        }
+        struct ibv_mr *send_mr;
+        ASSERT(send_mr = ibv_reg_mr(send_rdma_conn.pd, send_region, send_size, IBV_ACCESS_LOCAL_WRITE));
+        timer _test_start;
+        for(int i = 0;i < iters;i++)
+        {
+            struct ibv_send_wr wr, *bad_wr = NULL;
+            struct ibv_sge sge;
+            memset(&wr, 0, sizeof(wr));
+            wr.wr_id = 0;
+            wr.opcode = IBV_WR_SEND;
+            wr.sg_list = &sge;
+            wr.num_sge = 1;
+
+            sge.addr = (uintptr_t)send_region;
+            sge.length = send_size;
+            sge.lkey = send_mr->lkey;
+
+            CCALL(ibv_post_send(send_rdma_conn.qp, &wr, &bad_wr));
+            //printf("post_send %d\n", i);
+        }
+        int n, total_finished = 0;
+        struct ibv_wc wc[500];
+        while (total_finished < iters)
+        {
+            n = ibv_poll_cq(send_rdma_conn.cq, iters , wc);
+            for(int k = 0;k < n;k++){
+                ASSERT(wc[k].status == IBV_WC_SUCCESS);
+            }
+            total_finished += n;
+        }
+        double time_spend = _test_start.elapsed();
+        size_t total_size = iters * send_size;
+        ITR_SPECIAL("have send %d times, total_size %lld, speed %.2lf.\n",
+                    total_finished, (long long)total_size, (double)total_size/time_spend);
+    }
+    else{
+        char *recv_region_list[500];
+        struct ibv_mr *recv_mr_list[500];
+        for(int i = 0;i < iters; i++){
+            recv_region_list[i] = (char*)malloc(send_size);
+            ASSERT(recv_mr_list[i] = ibv_reg_mr(recv_rdma_conn.pd, recv_mr_list[i], send_size,
+                                                IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE));
+        }
+        for(int i = 0;i < iters;i++)
+        {
+            struct ibv_recv_wr wr, *bad_wr = NULL;
+            struct ibv_sge sge;
+
+            wr.wr_id = 1;
+            wr.next = NULL;
+            wr.sg_list = &sge;
+            wr.num_sge = 1;
+
+            sge.addr = (uintptr_t)(recv_region_list[i]);
+            sge.length = send_size;
+            sge.lkey = recv_mr_list[i]->lkey;
+
+            CCALL(ibv_post_recv(recv_rdma_conn.qp, &wr, &bad_wr));
+            //printf("recv_post %d\n", i);
+        }
+
+    }
+
 }

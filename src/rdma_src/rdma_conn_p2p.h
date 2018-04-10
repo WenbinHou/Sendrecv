@@ -84,6 +84,8 @@ public:
     double get_small_time(){
         return small_write_consume;
     }
+
+    void test_extreme_speed(int iters, size_t send_size, bool is_send);
     //bool isend();
     //bool irecv();
 };
