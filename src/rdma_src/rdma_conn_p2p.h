@@ -67,6 +67,7 @@ private:
 
     double small_write_consume = 0.0;
     timer _small_start;
+    std::thread *test_poll_thread;
 
 public:
     rdma_conn_p2p(const rdma_conn_p2p&) = delete;

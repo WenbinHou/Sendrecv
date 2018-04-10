@@ -27,7 +27,7 @@ int main(int argc, char *argv[])
             CPU_ZERO(&mask);
             for (int ii = 0; ii < 14; ++ii)
                 CPU_SET(ii, &mask), CPU_SET(ii + 28, &mask);
-            //CCALL(sched_setaffinity(0, sizeof(mask), &mask));
+            CCALL(sched_setaffinity(0, sizeof(mask), &mask));
             WARN("%s:%d ready to init with %s:%d.\n", LOCAL_HOST, LOCAL_PORT+i,
                  PEER_HOST, PEER_PORT_BASE + (i+1)%2);
             conn_system sys("127.0.0.1", LOCAL_PORT+i);
@@ -37,13 +37,14 @@ int main(int argc, char *argv[])
 
             if(i == 0)
             {
-                ITR_SPECIAL("READY to send msg 100 times .......\n");
+                ITR_SPECIAL("READY to send msg 500 times .......\n");
                 rdma_conn_object->test_extreme_speed(500, 1024*1024, true);
             }
             else{
-                ITR_SPECIAL("READY to recv msg 100 times .......\n");
+                ITR_SPECIAL("READY to recv msg 500 times .......\n");
                 rdma_conn_object->poll_recv(500);
             }
+
         });
     }
     for(auto& t: processes)

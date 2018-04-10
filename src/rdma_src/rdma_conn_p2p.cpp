@@ -676,6 +676,29 @@ void rdma_conn_p2p::test_extreme_speed(int iters, size_t send_size, bool is_send
         struct ibv_mr *send_mr;
         ASSERT(send_mr = ibv_reg_mr(send_rdma_conn.pd, send_region, send_size, IBV_ACCESS_LOCAL_WRITE));
         timer _test_start;
+        test_poll_thread = new std::thread([this, iters,send_size, &_test_start](){
+            int n, total_finished = 0;
+            struct ibv_wc wc[500];
+            while (total_finished < iters)
+            {
+                n = ibv_poll_cq(send_rdma_conn.cq, iters , wc);
+                if(n > 0){
+                    //SUCC("ibv_poll_cq : %d.\n", n);
+                    for(int k = 0;k < n;k++){
+                        ASSERT(wc[k].status == IBV_WC_SUCCESS);
+                    }
+                    total_finished += n;
+                }
+                else if(n < 0){
+                    ASSERT(0);
+                }
+            }
+            double time_spend = _test_start.elapsed();
+            size_t total_size = iters * send_size;
+            ITR_SPECIAL("have send %d times, total_size %lld, speed %.2lf.\n",
+                        total_finished, (long long)total_size, (double)total_size/1024/1024/time_spend);
+        });
+
         for(int i = 0;i < iters;i++)
         {
             struct ibv_send_wr wr, *bad_wr = NULL;
@@ -693,26 +716,7 @@ void rdma_conn_p2p::test_extreme_speed(int iters, size_t send_size, bool is_send
             CCALL(ibv_post_send(send_rdma_conn.qp, &wr, &bad_wr));
             //printf("post_send %d\n", i);
         }
-        int n, total_finished = 0;
-        struct ibv_wc wc[500];
-        while (total_finished < iters)
-        {
-            n = ibv_poll_cq(send_rdma_conn.cq, iters , wc);
-            if(n > 0){
-                //SUCC("ibv_poll_cq : %d.\n", n);
-                for(int k = 0;k < n;k++){
-                    ASSERT(wc[k].status == IBV_WC_SUCCESS);
-                }
-                total_finished += n;
-            }
-            else if(n < 0){
-                ASSERT(0);
-            }          
-        }
-        double time_spend = _test_start.elapsed();
-        size_t total_size = iters * send_size;
-        ITR_SPECIAL("have send %d times, total_size %lld, speed %.2lf.\n",
-                    total_finished, (long long)total_size, (double)total_size/1024/1024/time_spend);
+        test_poll_thread->join();
     }
     else{
         char *recv_region_list[500];
