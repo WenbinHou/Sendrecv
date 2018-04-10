@@ -86,6 +86,7 @@ public:
     }
 
     void test_extreme_speed(int iters, size_t send_size, bool is_send);
+    void poll_recv(int iters);
     //bool isend();
     //bool irecv();
 };

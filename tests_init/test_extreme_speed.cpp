@@ -38,9 +38,13 @@ int main(int argc, char *argv[])
 
             if(i == 0)
             {
-                ITR_SPECIAL("xxxxxxxxxxxxxxxxx\n");
+                ITR_SPECIAL("READY to send msg 100 times .......\n");
                 rdma_conn_object->test_extreme_speed(100, 512*1024, true);
-             }
+            }
+            else{
+                ITR_SPECIAL("READY to recv msg 100 times .......\n");
+                rdma_conn_object->poll_recv(100);
+            }
         });
     }
     for(auto& t: processes)

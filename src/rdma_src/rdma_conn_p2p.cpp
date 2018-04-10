@@ -732,7 +732,19 @@ void rdma_conn_p2p::test_extreme_speed(int iters, size_t send_size, bool is_send
             CCALL(ibv_post_recv(recv_rdma_conn.qp, &wr, &bad_wr));
             //printf("recv_post %d\n", i);
         }
-
     }
+}
 
+void rdma_conn_p2p::poll_recv(int iters){
+    int n, total_finished = 0;
+    struct ibv_wc wc[500];
+    while (total_finished < iters)
+    {
+        n = ibv_poll_cq(recv_rdma_conn.cq, iters , wc);
+        for(int k = 0;k < n;k++){
+            ASSERT(wc[k].status == IBV_WC_SUCCESS);
+        }
+        total_finished += n;
+    }
+    ITR_SPECIAL("all msg have been recved...\n");
 }
