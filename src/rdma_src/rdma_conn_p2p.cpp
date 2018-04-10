@@ -713,8 +713,7 @@ void rdma_conn_p2p::test_extreme_speed(int iters, size_t send_size, bool is_send
         struct ibv_mr *recv_mr_list[500];
         for(int i = 0;i < iters; i++){
             recv_region_list[i] = (char*)malloc(send_size);
-            ASSERT(recv_mr_list[i] = ibv_reg_mr(recv_rdma_conn.pd, recv_mr_list[i], send_size,
-                                                IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE));
+            ASSERT(recv_mr_list[i] = ibv_reg_mr(recv_rdma_conn.pd, recv_region_list[i], send_size, IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE));
         }
         for(int i = 0;i < iters;i++)
         {

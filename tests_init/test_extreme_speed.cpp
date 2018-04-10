@@ -19,30 +19,11 @@ static char *dummy_data;
 
 int main(int argc, char *argv[])
 {
-    if(argc < 3){
-        ERROR("two few parameter.\n");
-        exit(0);
-    }
-    size_t size = (size_t)atol(argv[1]);
-    char   unit = argv[2][0];
-    size_t DATA_LEN;
-    switch(unit){
-        case 'b':
-            DATA_LEN = size;
-            break;
-        case 'k':
-            DATA_LEN = size * 1024;
-            break;
-        case 'm':
-            DATA_LEN = size * 1024 *1024;
-            break;
-    }
-    ITR_SPECIAL("~~~~ size %d, unit %c, DATA_LEN %lld~~~~\n", (int)size, unit, (long long)DATA_LEN);
     int threads_num = 2;
     std::vector<std::thread> processes(threads_num);
 
     for(int i = 0;i < threads_num;i++){
-        processes[i] = std::thread([i, DATA_LEN](){
+        processes[i] = std::thread([i](){
             cpu_set_t mask;
             CPU_ZERO(&mask);
             for (int ii = 0; ii < 14; ++ii)
@@ -55,7 +36,11 @@ int main(int argc, char *argv[])
             ASSERT(rdma_conn_object);
             ITR_SPECIAL("%s:%d init finished.\n", LOCAL_HOST, LOCAL_PORT+i);
 
-            rdma_conn_object->test_extreme_speed(100, 512*1024, true);
+            if(i == 0)
+            {
+                ITR_SPECIAL("xxxxxxxxxxxxxxxxx\n");
+                rdma_conn_object->test_extreme_speed(100, 512*1024, true);
+             }
         });
     }
     for(auto& t: processes)
